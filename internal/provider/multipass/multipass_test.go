@@ -8,7 +8,7 @@ import (
 )
 
 func TestProviderName(t *testing.T) {
-	provider := New()
+	provider := New(false)
 	if provider.Name() != "multipass" {
 		t.Errorf("Name() = %q, want %q", provider.Name(), "multipass")
 	}

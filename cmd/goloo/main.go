@@ -28,6 +28,15 @@ type Command struct {
 	ProviderFlag  string
 	ConfigPath    string
 	CloudInitPath string
+	Verbose       bool
+}
+
+var verboseEnabled bool
+
+func verboseLog(format string, arguments ...interface{}) {
+	if verboseEnabled {
+		fmt.Fprintf(os.Stderr, "[verbose] "+format+"\n", arguments...)
+	}
 }
 
 func run(args []string) error {
@@ -36,6 +45,7 @@ func run(args []string) error {
 		return err
 	}
 
+	verboseEnabled = command.Verbose
 	ctx := context.Background()
 
 	switch command.Action {
@@ -67,12 +77,23 @@ func run(args []string) error {
 }
 
 func ParseArgs(args []string) (*Command, error) {
+	verbose := false
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		if arg == "--verbose" || arg == "-v" {
+			verbose = true
+		} else {
+			filtered = append(filtered, arg)
+		}
+	}
+	args = filtered
+
 	if len(args) == 0 {
 		return nil, fmt.Errorf("no command provided\n\nUsage: goloo <command> <name> [flags]\nCommands: create, delete, list, ssh, status, stop, start, dns swap\n\nRun 'goloo help' for details")
 	}
 
 	first := args[0]
-	if first == "--version" || first == "-v" {
+	if first == "--version" {
 		return &Command{Action: "version"}, nil
 	}
 	if first == "--help" || first == "-h" || first == "help" {
@@ -80,14 +101,19 @@ func ParseArgs(args []string) (*Command, error) {
 	}
 
 	if isLegacyInvocation(args) {
-		return parseLegacyArgs(args)
+		command, err := parseLegacyArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		command.Verbose = verbose
+		return command, nil
 	}
 
 	if strings.HasPrefix(first, "-") {
 		return nil, fmt.Errorf("unknown flag %q\nRun 'goloo help' for usage", first)
 	}
 
-	command := &Command{Action: first}
+	command := &Command{Action: first, Verbose: verbose}
 	remaining := args[1:]
 
 	if command.Action == "dns" {
@@ -216,12 +242,12 @@ func DetectProvider(providerFlag string, configuration *config.Config) string {
 	return "multipass"
 }
 
-func getProvider(providerName string, region string) (provider.VMProvider, error) {
+func getProvider(providerName string, region string, verbose bool) (provider.VMProvider, error) {
 	switch providerName {
 	case "aws":
 		return awsprovider.New(region), nil
 	case "multipass":
-		return multipass.New(), nil
+		return multipass.New(verbose), nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q: use 'aws' or 'multipass'", providerName)
 	}
@@ -243,13 +269,18 @@ func resolveCloudInitPath(command *Command, configuration *config.Config) string
 }
 
 func cmdCreate(ctx context.Context, command *Command) error {
+	verboseLog("loading config for %q", command.VMName)
 	configuration, configPath, err := loadConfig(command)
 	if err != nil {
 		return err
 	}
+	verboseLog("config loaded from %s (VM: %s, image: %s, cpus: %d, memory: %s, disk: %s)",
+		configPath, configuration.VM.Name, configuration.VM.Image,
+		configuration.VM.CPUs, configuration.VM.Memory, configuration.VM.Disk)
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	verboseLog("provider: %s", providerName)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -257,18 +288,27 @@ func cmdCreate(ctx context.Context, command *Command) error {
 	cloudInitSource := resolveCloudInitPath(command, configuration)
 	cloudInitPath := ""
 	if cloudInitSource != "" {
+		verboseLog("processing cloud-init template: %s", cloudInitSource)
+		for _, user := range configuration.VM.Users {
+			if user.GitHubUsername != "" {
+				verboseLog("fetching SSH keys from github.com/%s.keys", user.GitHubUsername)
+			}
+		}
 		processedPath, err := cloudinit.Process(cloudInitSource, configuration.VM.Users, cloudinit.FetchGitHubKeys)
 		if err != nil {
 			return fmt.Errorf("cloud-init processing failed: %w", err)
 		}
 		defer os.Remove(processedPath)
 		cloudInitPath = processedPath
+		verboseLog("cloud-init processed: %s", processedPath)
 	}
 
+	verboseLog("creating VM %q via %s", configuration.VM.Name, vmProvider.Name())
 	if err := vmProvider.Create(ctx, configuration, cloudInitPath); err != nil {
 		return err
 	}
 
+	verboseLog("saving config to %s", configPath)
 	if err := config.Save(configPath, configuration); err != nil {
 		return fmt.Errorf("VM created but failed to save config: %w", err)
 	}
@@ -300,7 +340,7 @@ func cmdDelete(ctx context.Context, command *Command) error {
 	}
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -323,7 +363,7 @@ func cmdList(ctx context.Context, command *Command) error {
 		providerName = "aws"
 	}
 
-	vmProvider, err := getProvider(providerName, "us-east-1")
+	vmProvider, err := getProvider(providerName, "us-east-1", command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -357,7 +397,7 @@ func cmdSSH(ctx context.Context, command *Command) error {
 	}
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -372,7 +412,7 @@ func cmdStatus(ctx context.Context, command *Command) error {
 	}
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -399,7 +439,7 @@ func cmdStop(ctx context.Context, command *Command) error {
 	}
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -419,7 +459,7 @@ func cmdStart(ctx context.Context, command *Command) error {
 	}
 
 	providerName := DetectProvider(command.ProviderFlag, configuration)
-	vmProvider, err := getProvider(providerName, configuration.VM.Region)
+	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
@@ -471,7 +511,8 @@ func printUsage() {
 	fmt.Println("  --local             Use local Multipass provider")
 	fmt.Println("  --config, -f PATH   Config file path")
 	fmt.Println("  --cloud-init PATH   Cloud-init file path")
-	fmt.Println("  --version, -v       Show version")
+	fmt.Println("  --verbose, -v       Show detailed progress")
+	fmt.Println("  --version           Show version")
 	fmt.Println("  --help, -h          Show this help")
 	fmt.Println()
 	fmt.Println("Legacy Flags (aws-ec2 compatibility):")

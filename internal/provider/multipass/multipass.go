@@ -6,15 +6,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/emergingrobotics/goloo/internal/config"
 	"github.com/emergingrobotics/goloo/internal/provider"
 )
 
-type Provider struct{}
+type Provider struct {
+	Verbose bool
+}
 
-func New() *Provider {
-	return &Provider{}
+func New(verbose bool) *Provider {
+	return &Provider{Verbose: verbose}
 }
 
 func (p *Provider) Name() string {
@@ -23,11 +26,12 @@ func (p *Provider) Name() string {
 
 func (p *Provider) Create(context context.Context, configuration *config.Config, cloudInitPath string) error {
 	arguments := BuildLaunchArgs(configuration, cloudInitPath)
-	output, err := runCommand(context, arguments...)
+	output, err := p.runCommand(context, arguments...)
 	if err != nil {
 		return fmt.Errorf("multipass launch failed: %s: %w", string(output), err)
 	}
 
+	p.verboseLog("getting VM info for %q", configuration.VM.Name)
 	info, err := p.getInfo(context, configuration.VM.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get VM info after creation: %w", err)
@@ -35,11 +39,12 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 
 	if len(info.IPv4) > 0 {
 		configuration.VM.PublicIP = info.IPv4[0]
+		p.verboseLog("VM IP: %s", info.IPv4[0])
 	}
 
 	for _, mount := range configuration.VM.Mounts {
 		mountArgs := []string{"mount", mount.Source, fmt.Sprintf("%s:%s", configuration.VM.Name, mount.Target)}
-		if _, err := runCommand(context, mountArgs...); err != nil {
+		if _, err := p.runCommand(context, mountArgs...); err != nil {
 			return fmt.Errorf("failed to mount %s: %w", mount.Source, err)
 		}
 	}
@@ -48,10 +53,10 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 }
 
 func (p *Provider) Delete(context context.Context, configuration *config.Config) error {
-	if _, err := runCommand(context, "delete", configuration.VM.Name); err != nil {
+	if _, err := p.runCommand(context, "delete", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to delete VM %s: %w", configuration.VM.Name, err)
 	}
-	if _, err := runCommand(context, "purge"); err != nil {
+	if _, err := p.runCommand(context, "purge"); err != nil {
 		return fmt.Errorf("failed to purge deleted VMs: %w", err)
 	}
 	configuration.VM.PublicIP = ""
@@ -76,7 +81,7 @@ func (p *Provider) Status(context context.Context, configuration *config.Config)
 }
 
 func (p *Provider) List(context context.Context) ([]provider.VMStatus, error) {
-	output, err := runCommand(context, "list", "--format", "json")
+	output, err := p.runCommand(context, "list", "--format", "json")
 	if err != nil {
 		return nil, fmt.Errorf("multipass list failed: %w", err)
 	}
@@ -109,14 +114,14 @@ func (p *Provider) SSH(context context.Context, configuration *config.Config) er
 }
 
 func (p *Provider) Stop(context context.Context, configuration *config.Config) error {
-	if _, err := runCommand(context, "stop", configuration.VM.Name); err != nil {
+	if _, err := p.runCommand(context, "stop", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to stop VM %s: %w", configuration.VM.Name, err)
 	}
 	return nil
 }
 
 func (p *Provider) Start(context context.Context, configuration *config.Config) error {
-	if _, err := runCommand(context, "start", configuration.VM.Name); err != nil {
+	if _, err := p.runCommand(context, "start", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to start VM %s: %w", configuration.VM.Name, err)
 	}
 	return nil
@@ -174,7 +179,7 @@ func ParseListJSON(data []byte) (*MultipassList, error) {
 }
 
 func (p *Provider) getInfo(context context.Context, name string) (*MultipassVM, error) {
-	output, err := runCommand(context, "info", name, "--format", "json")
+	output, err := p.runCommand(context, "info", name, "--format", "json")
 	if err != nil {
 		return nil, fmt.Errorf("VM not found: check 'goloo list' for available VMs")
 	}
@@ -189,7 +194,14 @@ func (p *Provider) getInfo(context context.Context, name string) (*MultipassVM, 
 	return &vm, nil
 }
 
-func runCommand(context context.Context, arguments ...string) ([]byte, error) {
+func (p *Provider) verboseLog(format string, arguments ...interface{}) {
+	if p.Verbose {
+		fmt.Fprintf(os.Stderr, "[verbose] "+format+"\n", arguments...)
+	}
+}
+
+func (p *Provider) runCommand(context context.Context, arguments ...string) ([]byte, error) {
+	p.verboseLog("exec: multipass %s", strings.Join(arguments, " "))
 	command := exec.CommandContext(context, "multipass", arguments...)
 	return command.CombinedOutput()
 }

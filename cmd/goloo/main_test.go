@@ -13,15 +13,46 @@ func TestParseArgsNoArgs(t *testing.T) {
 	}
 }
 
-func TestParseArgsVersionFlags(t *testing.T) {
-	for _, flag := range []string{"--version", "-v"} {
-		command, err := ParseArgs([]string{flag})
-		if err != nil {
-			t.Fatalf("unexpected error for %s: %v", flag, err)
-		}
-		if command.Action != "version" {
-			t.Errorf("expected action 'version' for %s, got %q", flag, command.Action)
-		}
+func TestParseArgsVersionFlag(t *testing.T) {
+	command, err := ParseArgs([]string{"--version"})
+	if err != nil {
+		t.Fatalf("unexpected error for --version: %v", err)
+	}
+	if command.Action != "version" {
+		t.Errorf("expected action 'version' for --version, got %q", command.Action)
+	}
+}
+
+func TestParseArgsVerboseFlag(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "-v"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !command.Verbose {
+		t.Error("expected Verbose=true for -v flag")
+	}
+	if command.VMName != "devbox" {
+		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
+	}
+}
+
+func TestParseArgsVerboseLongFlag(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "--verbose", "devbox"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !command.Verbose {
+		t.Error("expected Verbose=true for --verbose flag")
+	}
+	if command.VMName != "devbox" {
+		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
+	}
+}
+
+func TestParseArgsVerboseAloneIsError(t *testing.T) {
+	_, err := ParseArgs([]string{"-v"})
+	if err == nil {
+		t.Fatal("expected error for -v with no command")
 	}
 }
 

@@ -10,6 +10,9 @@ You want to build a server. You need it running locally for development, then de
 
 Goloo uses one JSON config and one cloud-init YAML to create the same server in both places.
 
+## About the name
+
+
 ## Quick Start
 
 ### 1. Write a cloud-init file
