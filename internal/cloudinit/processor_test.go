@@ -129,6 +129,21 @@ func TestSubstituteDefaultVariable(t *testing.T) {
 	}
 }
 
+func TestSubstituteMultipleKeysPerUser(t *testing.T) {
+	content := "#cloud-config\nusers:\n  - name: ubuntu\n    ssh_authorized_keys:\n      - ${SSH_PUBLIC_KEY}"
+	users := []config.User{{Username: "ubuntu", GitHubUsername: "gherlein"}}
+	keysPerUser := map[string]string{
+		"ubuntu": "ssh-ed25519 AAAAC3key1\nssh-rsa AAAAB3key2\nssh-ed25519 AAAAC3key3",
+	}
+
+	result := substituteVariables(content, users, keysPerUser)
+
+	expected := "#cloud-config\nusers:\n  - name: ubuntu\n    ssh_authorized_keys:\n      - ssh-ed25519 AAAAC3key1\n      - ssh-rsa AAAAB3key2\n      - ssh-ed25519 AAAAC3key3"
+	if result != expected {
+		t.Errorf("substituteVariables() =\n%s\nwant:\n%s", result, expected)
+	}
+}
+
 func TestSubstitutePerUserVariable(t *testing.T) {
 	content := "ssh_authorized_keys:\n  - ${SSH_PUBLIC_KEY_UBUNTU}\n  - ${SSH_PUBLIC_KEY_ADMIN}"
 	users := []config.User{
