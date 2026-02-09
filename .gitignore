@@ -1,3 +1,33 @@
-bin
+# Build output
+bin/
+
+# Local VM configs (user-specific)
+local/
+
+# OS artifacts
+.DS_Store
 *~
-local
+
+# Editor files
+*.swp
+*.swo
+.idea/
+.vscode/
+*.sublime-*
+
+# Go
+*.exe
+*.test
+*.out
+cover.out
+coverage.html
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Temp files
+*.tmp
+goloo-cloudinit-*.yaml
