@@ -1,0 +1,37 @@
+#cloud-config
+# General development environment
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - build-essential
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - jq
+  - tree
+  - unzip
+  - zip
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - apt-transport-https
+  - ripgrep
+  - fd-find
+  - tmux
+  - fzf
+
+runcmd:
+  - ln -sf /usr/bin/fdfind /usr/local/bin/fd
+  - echo "Development VM configuration complete" >> /var/log/cloud-init-custom.log

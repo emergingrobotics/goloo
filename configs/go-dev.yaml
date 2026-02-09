@@ -1,0 +1,40 @@
+#cloud-config
+# Go development environment
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - build-essential
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - jq
+  - tree
+  - unzip
+  - ca-certificates
+  - gnupg
+  - ripgrep
+  - fd-find
+  - tmux
+  - fzf
+
+runcmd:
+  - ln -sf /usr/bin/fdfind /usr/local/bin/fd
+  - curl -fsSL https://go.dev/dl/go1.23.6.linux-amd64.tar.gz -o /tmp/go.tar.gz
+  - rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
+  - rm /tmp/go.tar.gz
+  - echo 'export PATH=$PATH:/usr/local/go/bin' >> /home/ubuntu/.bashrc
+  - echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> /home/ubuntu/.bashrc
+  - sudo -u ubuntu /usr/local/go/bin/go install golang.org/x/tools/gopls@latest
+  - sudo -u ubuntu /usr/local/go/bin/go install github.com/go-delve/delve/cmd/dlv@latest
+  - echo "Go development VM configuration complete" >> /var/log/cloud-init-custom.log

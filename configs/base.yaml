@@ -1,0 +1,23 @@
+#cloud-config
+# Base configuration: minimal Ubuntu with SSH and basic tools
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - ca-certificates
+
+runcmd:
+  - echo "Base VM configuration complete" >> /var/log/cloud-init-custom.log

@@ -1,0 +1,38 @@
+#cloud-config
+# Node.js development environment
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - build-essential
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - jq
+  - tree
+  - unzip
+  - ca-certificates
+  - gnupg
+  - ripgrep
+  - fd-find
+  - tmux
+  - fzf
+
+runcmd:
+  - ln -sf /usr/bin/fdfind /usr/local/bin/fd
+  - curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  - apt-get install -y nodejs
+  - npm install -g npm@latest
+  - npm install -g pnpm
+  - npm install -g yarn
+  - echo "Node.js development VM configuration complete" >> /var/log/cloud-init-custom.log

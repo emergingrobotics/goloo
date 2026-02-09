@@ -1,0 +1,112 @@
+#cloud-config
+# Full development environment for Claude Code
+# Includes: Node.js, Python, Go, Docker, and common dev tools
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - build-essential
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - jq
+  - tree
+  - unzip
+  - zip
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - software-properties-common
+  - apt-transport-https
+  - ripgrep
+  - fd-find
+  - tmux
+  - fzf
+  - python3
+  - python3-pip
+  - python3-venv
+  - python3-dev
+  - libffi-dev
+  - libssl-dev
+  - make
+
+write_files:
+  - path: /home/ubuntu/.bashrc.d/dev-env.sh
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+    content: |
+      # Development environment paths
+      export PATH="$PATH:/usr/local/go/bin"
+      export PATH="$PATH:$HOME/go/bin"
+      export PATH="$PATH:$HOME/.local/bin"
+
+      # NVM configuration
+      export NVM_DIR="$HOME/.nvm"
+      [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+      [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+      # Aliases
+      alias ll='ls -alF'
+      alias la='ls -A'
+      alias l='ls -CF'
+      alias gs='git status'
+      alias gd='git diff'
+      alias gl='git log --oneline -20'
+
+  - path: /home/ubuntu/.bashrc.d/README
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+    content: |
+      Files in this directory are sourced by .bashrc
+      Add custom shell configuration here
+
+runcmd:
+  - ln -sf /usr/bin/fdfind /usr/local/bin/fd
+
+  # Setup bashrc.d directory sourcing
+  - mkdir -p /home/ubuntu/.bashrc.d
+  - chown -R ubuntu:ubuntu /home/ubuntu/.bashrc.d
+  - |
+    cat >> /home/ubuntu/.bashrc << 'EOF'
+
+    # Source all files in .bashrc.d
+    if [ -d ~/.bashrc.d ]; then
+      for f in ~/.bashrc.d/*.sh; do
+        [ -r "$f" ] && . "$f"
+      done
+    fi
+    EOF
+
+  # Install Go
+  - curl -fsSL https://go.dev/dl/go1.23.6.linux-amd64.tar.gz -o /tmp/go.tar.gz
+  - rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
+  - rm /tmp/go.tar.gz
+  - sudo -u ubuntu /usr/local/go/bin/go install golang.org/x/tools/gopls@latest
+  - sudo -u ubuntu /usr/local/go/bin/go install github.com/go-delve/delve/cmd/dlv@latest
+
+  # Install NVM and Node.js
+  - sudo -u ubuntu bash -c 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash'
+  - sudo -u ubuntu bash -c 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh" && nvm install --lts && nvm use --lts && npm install -g npm@latest pnpm yarn'
+
+  # Install Python tools
+  - sudo -u ubuntu python3 -m pip install --user --upgrade pip
+  - sudo -u ubuntu python3 -m pip install --user uv
+
+  # Install Docker
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker ubuntu
+
+  # Set permissions
+  - chown -R ubuntu:ubuntu /home/ubuntu
+
+  - echo "Claude development VM configuration complete" >> /var/log/cloud-init-custom.log

@@ -1,0 +1,41 @@
+#cloud-config
+# Python development environment
+
+users:
+  - name: ubuntu
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${SSH_PUBLIC_KEY}
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - build-essential
+  - curl
+  - wget
+  - vim
+  - htop
+  - git
+  - jq
+  - tree
+  - unzip
+  - ca-certificates
+  - gnupg
+  - ripgrep
+  - fd-find
+  - tmux
+  - fzf
+  - python3
+  - python3-pip
+  - python3-venv
+  - python3-dev
+  - libffi-dev
+  - libssl-dev
+
+runcmd:
+  - ln -sf /usr/bin/fdfind /usr/local/bin/fd
+  - sudo -u ubuntu python3 -m pip install --user --upgrade pip
+  - sudo -u ubuntu python3 -m pip install --user uv
+  - echo "Python development VM configuration complete" >> /var/log/cloud-init-custom.log
