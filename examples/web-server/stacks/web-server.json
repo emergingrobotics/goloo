@@ -1,0 +1,13 @@
+{
+  "vm": {
+    "name": "web-server",
+    "cpus": 2,
+    "memory": "2G",
+    "disk": "20G",
+    "image": "24.04",
+    "cloud_init_file": "cloud-init/web-server.yaml",
+    "users": [
+      {"username": "ubuntu", "github_username": "your-github-username"}
+    ]
+  }
+}
