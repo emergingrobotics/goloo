@@ -10,8 +10,9 @@ You want to build a server. You need it running locally for development, then de
 
 Goloo uses one JSON config and one cloud-init YAML to create the same server in both places.
 
-## About the name
+## About the Name
 
+**Go** + **Leeloo**. Named after the character from The Fifth Element who carries a "multipass" — the same Multipass that Canonical named their VM manager after. Goloo extends that idea: one tool, one config, anywhere you need to go. See [docs/about-the-name.md](docs/about-the-name.md) for the full story.
 
 ## Quick Start
 
