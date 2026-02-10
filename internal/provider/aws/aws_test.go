@@ -435,6 +435,8 @@ func TestDeleteCleansUpResources(t *testing.T) {
 			Name:      "devbox",
 			StackName: "goloo-devbox",
 			PublicIP:  "54.1.2.3",
+			VpcID:     "vpc-abc123",
+			SubnetID:  "subnet-def456",
 		},
 		DNS: &config.DNSConfig{
 			ZoneID: "Z1234567890",
@@ -465,8 +467,47 @@ func TestDeleteCleansUpResources(t *testing.T) {
 	if configuration.VM.StackName != "" {
 		t.Error("StackName should be cleared after delete")
 	}
+	if configuration.VM.VpcID != "" {
+		t.Error("VpcID should be cleared after delete")
+	}
+	if configuration.VM.SubnetID != "" {
+		t.Error("SubnetID should be cleared after delete")
+	}
 	if configuration.DNS.ZoneID != "" {
 		t.Error("DNS ZoneID should be cleared after delete")
+	}
+}
+
+func TestDeleteContinuesWhenDNSDeletionFails(t *testing.T) {
+	provider, cloudFormation, _, route53, _ := newFakeProvider()
+	route53.deleteError = fmt.Errorf("Route53 throttled")
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:      "devbox",
+			StackName: "goloo-devbox",
+			PublicIP:  "54.1.2.3",
+			VpcID:     "vpc-abc123",
+			SubnetID:  "subnet-def456",
+		},
+		DNS: &config.DNSConfig{
+			ZoneID: "Z1234567890",
+			DNSRecords: []config.DNSRecord{
+				{Name: "devbox.example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
+			},
+		},
+	}
+
+	err := provider.Delete(context.Background(), configuration)
+	if err != nil {
+		t.Fatalf("Delete() should succeed even when DNS deletion fails, got: %v", err)
+	}
+
+	if len(cloudFormation.deletedStacks) != 1 {
+		t.Error("CloudFormation stack should still be deleted after DNS failure")
+	}
+	if configuration.VM.StackName != "" {
+		t.Error("Runtime fields should still be cleared after DNS failure")
 	}
 }
 

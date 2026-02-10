@@ -87,6 +87,8 @@ func Validate(configuration *Config) error {
 	if configuration.VM.Name == "" {
 		return fmt.Errorf("config missing required field: vm.name")
 	}
+
+	seen := make(map[string]bool)
 	for _, user := range configuration.VM.Users {
 		if user.Username == "" {
 			return fmt.Errorf("user missing required field: username")
@@ -94,6 +96,23 @@ func Validate(configuration *Config) error {
 		if !validUsernamePattern.MatchString(user.Username) {
 			return fmt.Errorf("invalid username %q: must start with a lowercase letter and contain only lowercase letters, numbers, hyphens, underscores", user.Username)
 		}
+		if user.GitHubUsername == "" {
+			return fmt.Errorf("user %q missing required field: github_username", user.Username)
+		}
+		if seen[user.Username] {
+			return fmt.Errorf("duplicate username %q", user.Username)
+		}
+		seen[user.Username] = true
 	}
+
+	if configuration.DNS != nil {
+		if len(configuration.DNS.CNAMEAliases) > 0 && configuration.DNS.Domain == "" {
+			return fmt.Errorf("dns.cname_aliases requires dns.domain")
+		}
+		if configuration.DNS.IsApexDomain && configuration.DNS.Domain == "" {
+			return fmt.Errorf("dns.is_apex_domain requires dns.domain")
+		}
+	}
+
 	return nil
 }

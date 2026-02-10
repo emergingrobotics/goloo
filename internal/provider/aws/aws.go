@@ -145,7 +145,7 @@ func (p *Provider) Delete(context context.Context, configuration *config.Config)
 
 	if configuration.DNS != nil && configuration.DNS.ZoneID != "" && configuration.VM.PublicIP != "" {
 		if err := p.deleteDNSRecords(context, configuration); err != nil {
-			return fmt.Errorf("DNS record deletion failed: %w", err)
+			fmt.Fprintf(os.Stderr, "Warning: DNS record deletion failed (continuing with delete): %v\n", err)
 		}
 	}
 
@@ -177,6 +177,8 @@ func (p *Provider) Delete(context context.Context, configuration *config.Config)
 	configuration.VM.StackName = ""
 	configuration.VM.SecurityGroup = ""
 	configuration.VM.AMIID = ""
+	configuration.VM.VpcID = ""
+	configuration.VM.SubnetID = ""
 	configuration.VM.CreatedVPC = false
 	configuration.VM.CreatedSubnet = false
 	configuration.VM.InternetGatewayID = ""

@@ -478,7 +478,7 @@ func cmdStop(ctx context.Context, command *Command) error {
 }
 
 func cmdStart(ctx context.Context, command *Command) error {
-	configuration, _, err := loadConfig(command)
+	configuration, configPath, err := loadConfig(command)
 	if err != nil {
 		return err
 	}
@@ -494,6 +494,16 @@ func cmdStart(ctx context.Context, command *Command) error {
 	}
 
 	fmt.Printf("Started %s\n", configuration.VM.Name)
+
+	status, err := vmProvider.Status(ctx, configuration)
+	if err == nil && status.IP != "" && status.IP != configuration.VM.PublicIP {
+		configuration.VM.PublicIP = status.IP
+		if saveErr := config.Save(configPath, configuration); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
+		}
+		fmt.Printf("IP: %s\n", status.IP)
+	}
+
 	return nil
 }
 

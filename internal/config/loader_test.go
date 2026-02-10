@@ -217,7 +217,7 @@ func TestValidateInvalidUsernameStartsWithNumber(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
 			Name:  "devbox",
-			Users: []User{{Username: "1baduser"}},
+			Users: []User{{Username: "1baduser", GitHubUsername: "test"}},
 		},
 	}
 	err := Validate(configuration)
@@ -230,7 +230,7 @@ func TestValidateInvalidUsernameUppercase(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
 			Name:  "devbox",
-			Users: []User{{Username: "BadUser"}},
+			Users: []User{{Username: "BadUser", GitHubUsername: "test"}},
 		},
 	}
 	err := Validate(configuration)
@@ -243,7 +243,7 @@ func TestValidateInvalidUsernameSpecialChars(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
 			Name:  "devbox",
-			Users: []User{{Username: "bad@user"}},
+			Users: []User{{Username: "bad@user", GitHubUsername: "test"}},
 		},
 	}
 	err := Validate(configuration)
@@ -256,7 +256,7 @@ func TestValidateValidUsernameWithHyphensAndUnderscores(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
 			Name:  "devbox",
-			Users: []User{{Username: "my-user_name"}},
+			Users: []User{{Username: "my-user_name", GitHubUsername: "test"}},
 		},
 	}
 	if err := Validate(configuration); err != nil {
@@ -268,12 +268,81 @@ func TestValidateEmptyUsername(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
 			Name:  "devbox",
-			Users: []User{{Username: ""}},
+			Users: []User{{Username: "", GitHubUsername: "test"}},
 		},
 	}
 	err := Validate(configuration)
 	if err == nil {
 		t.Fatal("Validate() should return error for empty username")
+	}
+}
+
+func TestValidateMissingGitHubUsername(t *testing.T) {
+	configuration := &Config{
+		VM: &VMConfig{
+			Name:  "devbox",
+			Users: []User{{Username: "ubuntu"}},
+		},
+	}
+	err := Validate(configuration)
+	if err == nil {
+		t.Fatal("Validate() should return error for missing github_username")
+	}
+}
+
+func TestValidateDuplicateUsernames(t *testing.T) {
+	configuration := &Config{
+		VM: &VMConfig{
+			Name: "devbox",
+			Users: []User{
+				{Username: "ubuntu", GitHubUsername: "alice"},
+				{Username: "ubuntu", GitHubUsername: "bob"},
+			},
+		},
+	}
+	err := Validate(configuration)
+	if err == nil {
+		t.Fatal("Validate() should return error for duplicate usernames")
+	}
+}
+
+func TestValidateCNAMEAliasesRequiresDomain(t *testing.T) {
+	configuration := &Config{
+		VM: &VMConfig{Name: "devbox"},
+		DNS: &DNSConfig{
+			CNAMEAliases: []string{"www"},
+		},
+	}
+	err := Validate(configuration)
+	if err == nil {
+		t.Fatal("Validate() should return error for cname_aliases without domain")
+	}
+}
+
+func TestValidateIsApexDomainRequiresDomain(t *testing.T) {
+	configuration := &Config{
+		VM: &VMConfig{Name: "devbox"},
+		DNS: &DNSConfig{
+			IsApexDomain: true,
+		},
+	}
+	err := Validate(configuration)
+	if err == nil {
+		t.Fatal("Validate() should return error for is_apex_domain without domain")
+	}
+}
+
+func TestValidateDNSWithDomainAndAliases(t *testing.T) {
+	configuration := &Config{
+		VM: &VMConfig{Name: "devbox"},
+		DNS: &DNSConfig{
+			Domain:       "example.com",
+			CNAMEAliases: []string{"www"},
+			IsApexDomain: true,
+		},
+	}
+	if err := Validate(configuration); err != nil {
+		t.Errorf("Validate() returned error for valid DNS config: %v", err)
 	}
 }
 
