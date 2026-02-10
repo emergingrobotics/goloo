@@ -11,21 +11,36 @@ func BuildFQDN(hostname string, domain string) string {
 	return fmt.Sprintf("%s.%s", hostname, domain)
 }
 
+func (p *Provider) resolveZoneID(context context.Context, configuration *config.Config) (string, error) {
+	if configuration.DNS.ZoneID != "" {
+		return configuration.DNS.ZoneID, nil
+	}
+	zoneID, err := p.Route53.FindZoneID(context, configuration.DNS.Domain)
+	if err != nil {
+		return "", fmt.Errorf("failed to find hosted zone for %s: %w", configuration.DNS.Domain, err)
+	}
+	configuration.DNS.ZoneID = zoneID
+	return zoneID, nil
+}
+
+func (p *Provider) resolveHostname(configuration *config.Config) string {
+	if configuration.DNS.Hostname != "" {
+		return configuration.DNS.Hostname
+	}
+	return configuration.VM.Name
+}
+
 func (p *Provider) createDNSRecords(context context.Context, configuration *config.Config) error {
 	if p.Route53 == nil {
 		return fmt.Errorf("Route53 client not configured")
 	}
 
-	hostname := configuration.DNS.Hostname
-	if hostname == "" {
-		hostname = configuration.VM.Name
-	}
+	hostname := p.resolveHostname(configuration)
 
-	zoneID, err := p.Route53.FindZoneID(context, configuration.DNS.Domain)
+	zoneID, err := p.resolveZoneID(context, configuration)
 	if err != nil {
-		return fmt.Errorf("failed to find hosted zone for %s: %w", configuration.DNS.Domain, err)
+		return err
 	}
-	configuration.DNS.ZoneID = zoneID
 
 	fqdn := BuildFQDN(hostname, configuration.DNS.Domain)
 	configuration.DNS.FQDN = fqdn
@@ -39,10 +54,31 @@ func (p *Provider) createDNSRecords(context context.Context, configuration *conf
 		return fmt.Errorf("failed to create A record for %s: %w", fqdn, err)
 	}
 
-	configuration.DNS.DNSRecords = []config.DNSRecord{
+	records := []config.DNSRecord{
 		{Name: fqdn, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl},
 	}
 
+	if configuration.DNS.IsApexDomain {
+		apexName := configuration.DNS.Domain
+		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.VM.PublicIP, ttl); err != nil {
+			return fmt.Errorf("failed to create apex A record for %s: %w", apexName, err)
+		}
+		records = append(records, config.DNSRecord{
+			Name: apexName, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl,
+		})
+	}
+
+	for _, alias := range configuration.DNS.CNAMEAliases {
+		aliasName := BuildFQDN(alias, configuration.DNS.Domain)
+		if err := p.Route53.UpsertCNAMERecord(context, zoneID, aliasName, fqdn, ttl); err != nil {
+			return fmt.Errorf("failed to create CNAME record %s -> %s: %w", aliasName, fqdn, err)
+		}
+		records = append(records, config.DNSRecord{
+			Name: aliasName, Type: "CNAME", Value: fqdn, TTL: ttl,
+		})
+	}
+
+	configuration.DNS.DNSRecords = records
 	return nil
 }
 
@@ -52,9 +88,14 @@ func (p *Provider) deleteDNSRecords(context context.Context, configuration *conf
 	}
 
 	for _, record := range configuration.DNS.DNSRecords {
-		if record.Type == "A" {
+		switch record.Type {
+		case "A":
 			if err := p.Route53.DeleteARecord(context, configuration.DNS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
 				return fmt.Errorf("failed to delete A record %s: %w", record.Name, err)
+			}
+		case "CNAME":
+			if err := p.Route53.DeleteCNAMERecord(context, configuration.DNS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
+				return fmt.Errorf("failed to delete CNAME record %s: %w", record.Name, err)
 			}
 		}
 	}
@@ -76,19 +117,11 @@ func (p *Provider) SwapDNS(context context.Context, configuration *config.Config
 		return fmt.Errorf("no public IP: VM must be running for dns swap")
 	}
 
-	hostname := configuration.DNS.Hostname
-	if hostname == "" {
-		hostname = configuration.VM.Name
-	}
+	hostname := p.resolveHostname(configuration)
 
-	zoneID := configuration.DNS.ZoneID
-	if zoneID == "" {
-		var err error
-		zoneID, err = p.Route53.FindZoneID(context, configuration.DNS.Domain)
-		if err != nil {
-			return fmt.Errorf("failed to find hosted zone for %s: %w", configuration.DNS.Domain, err)
-		}
-		configuration.DNS.ZoneID = zoneID
+	zoneID, err := p.resolveZoneID(context, configuration)
+	if err != nil {
+		return err
 	}
 
 	fqdn := BuildFQDN(hostname, configuration.DNS.Domain)
@@ -101,10 +134,31 @@ func (p *Provider) SwapDNS(context context.Context, configuration *config.Config
 		return fmt.Errorf("failed to swap DNS record for %s: %w", fqdn, err)
 	}
 
-	configuration.DNS.FQDN = fqdn
-	configuration.DNS.DNSRecords = []config.DNSRecord{
+	records := []config.DNSRecord{
 		{Name: fqdn, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl},
 	}
 
+	if configuration.DNS.IsApexDomain {
+		apexName := configuration.DNS.Domain
+		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.VM.PublicIP, ttl); err != nil {
+			return fmt.Errorf("failed to swap apex A record for %s: %w", apexName, err)
+		}
+		records = append(records, config.DNSRecord{
+			Name: apexName, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl,
+		})
+	}
+
+	for _, alias := range configuration.DNS.CNAMEAliases {
+		aliasName := BuildFQDN(alias, configuration.DNS.Domain)
+		if err := p.Route53.UpsertCNAMERecord(context, zoneID, aliasName, fqdn, ttl); err != nil {
+			return fmt.Errorf("failed to swap CNAME record %s -> %s: %w", aliasName, fqdn, err)
+		}
+		records = append(records, config.DNSRecord{
+			Name: aliasName, Type: "CNAME", Value: fqdn, TTL: ttl,
+		})
+	}
+
+	configuration.DNS.FQDN = fqdn
+	configuration.DNS.DNSRecords = records
 	return nil
 }

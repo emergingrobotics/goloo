@@ -110,41 +110,28 @@ func TestParseArgsCreateWithLocalFlag(t *testing.T) {
 	}
 }
 
-func TestParseArgsCreateWithConfigFlag(t *testing.T) {
-	for _, flag := range []string{"--config", "-f"} {
-		command, err := ParseArgs([]string{"create", "devbox", flag, "/path/to/config.json"})
+func TestParseArgsCreateWithFolderFlag(t *testing.T) {
+	for _, flag := range []string{"--folder", "-f"} {
+		command, err := ParseArgs([]string{"create", "devbox", flag, "/path/to/servers"})
 		if err != nil {
 			t.Fatalf("unexpected error for %s: %v", flag, err)
 		}
-		if command.ConfigPath != "/path/to/config.json" {
-			t.Errorf("expected ConfigPath '/path/to/config.json' for %s, got %q", flag, command.ConfigPath)
+		if command.FolderPath != "/path/to/servers" {
+			t.Errorf("expected FolderPath '/path/to/servers' for %s, got %q", flag, command.FolderPath)
 		}
-	}
-}
-
-func TestParseArgsCreateWithCloudInitFlag(t *testing.T) {
-	command, err := ParseArgs([]string{"create", "devbox", "--cloud-init", "cloud-init/dev.yaml"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if command.CloudInitPath != "cloud-init/dev.yaml" {
-		t.Errorf("expected CloudInitPath 'cloud-init/dev.yaml', got %q", command.CloudInitPath)
 	}
 }
 
 func TestParseArgsCreateWithMultipleFlags(t *testing.T) {
-	command, err := ParseArgs([]string{"create", "devbox", "--aws", "--config", "stacks/prod.json", "--cloud-init", "ci.yaml"})
+	command, err := ParseArgs([]string{"create", "devbox", "--aws", "--folder", "/my/stacks"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if command.ProviderFlag != "aws" {
 		t.Errorf("expected ProviderFlag 'aws', got %q", command.ProviderFlag)
 	}
-	if command.ConfigPath != "stacks/prod.json" {
-		t.Errorf("expected ConfigPath 'stacks/prod.json', got %q", command.ConfigPath)
-	}
-	if command.CloudInitPath != "ci.yaml" {
-		t.Errorf("expected CloudInitPath 'ci.yaml', got %q", command.CloudInitPath)
+	if command.FolderPath != "/my/stacks" {
+		t.Errorf("expected FolderPath '/my/stacks', got %q", command.FolderPath)
 	}
 }
 
@@ -371,24 +358,17 @@ func TestParseArgsUnknownFirstFlag(t *testing.T) {
 	}
 }
 
-func TestParseArgsConfigFlagWithoutValue(t *testing.T) {
-	_, err := ParseArgs([]string{"create", "devbox", "--config"})
+func TestParseArgsFolderFlagWithoutValue(t *testing.T) {
+	_, err := ParseArgs([]string{"create", "devbox", "--folder"})
 	if err == nil {
-		t.Fatal("expected error for --config without value")
+		t.Fatal("expected error for --folder without value")
 	}
 }
 
-func TestParseArgsShortConfigFlagWithoutValue(t *testing.T) {
+func TestParseArgsShortFolderFlagWithoutValue(t *testing.T) {
 	_, err := ParseArgs([]string{"create", "devbox", "-f"})
 	if err == nil {
 		t.Fatal("expected error for -f without value")
-	}
-}
-
-func TestParseArgsCloudInitFlagWithoutValue(t *testing.T) {
-	_, err := ParseArgs([]string{"create", "devbox", "--cloud-init"})
-	if err == nil {
-		t.Fatal("expected error for --cloud-init without value")
 	}
 }
 
@@ -400,7 +380,7 @@ func TestParseArgsListWithUnknownFlag(t *testing.T) {
 }
 
 func TestParseArgsDNSSwapWithFlags(t *testing.T) {
-	command, err := ParseArgs([]string{"dns", "swap", "devbox", "--config", "stacks/prod.json"})
+	command, err := ParseArgs([]string{"dns", "swap", "devbox", "--folder", "/my/stacks"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,8 +390,8 @@ func TestParseArgsDNSSwapWithFlags(t *testing.T) {
 	if command.VMName != "devbox" {
 		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
 	}
-	if command.ConfigPath != "stacks/prod.json" {
-		t.Errorf("expected ConfigPath 'stacks/prod.json', got %q", command.ConfigPath)
+	if command.FolderPath != "/my/stacks" {
+		t.Errorf("expected FolderPath '/my/stacks', got %q", command.FolderPath)
 	}
 }
 
@@ -431,16 +411,16 @@ func TestParseArgsFlagsBeforeName(t *testing.T) {
 	}
 }
 
-func TestParseArgsConfigFlagBeforeName(t *testing.T) {
-	command, err := ParseArgs([]string{"create", "--config", "stacks/prod.json", "devbox"})
+func TestParseArgsFolderFlagBeforeName(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "--folder", "/my/stacks", "devbox"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if command.VMName != "devbox" {
 		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
 	}
-	if command.ConfigPath != "stacks/prod.json" {
-		t.Errorf("expected ConfigPath 'stacks/prod.json', got %q", command.ConfigPath)
+	if command.FolderPath != "/my/stacks" {
+		t.Errorf("expected FolderPath '/my/stacks', got %q", command.FolderPath)
 	}
 }
 
@@ -452,7 +432,7 @@ func TestParseArgsDuplicatePositionalArgs(t *testing.T) {
 }
 
 func TestParseArgsMixedFlagPositions(t *testing.T) {
-	command, err := ParseArgs([]string{"create", "--aws", "devbox", "--cloud-init", "ci.yaml"})
+	command, err := ParseArgs([]string{"create", "--aws", "devbox", "--folder", "/my/stacks"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,8 +442,93 @@ func TestParseArgsMixedFlagPositions(t *testing.T) {
 	if command.ProviderFlag != "aws" {
 		t.Errorf("expected ProviderFlag 'aws', got %q", command.ProviderFlag)
 	}
-	if command.CloudInitPath != "ci.yaml" {
-		t.Errorf("expected CloudInitPath 'ci.yaml', got %q", command.CloudInitPath)
+	if command.FolderPath != "/my/stacks" {
+		t.Errorf("expected FolderPath '/my/stacks', got %q", command.FolderPath)
+	}
+}
+
+func TestParseArgsUsersFlagSingleUser(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "--users", "gherlein"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(command.Users) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(command.Users))
+	}
+	if command.Users[0] != "gherlein" {
+		t.Errorf("expected user 'gherlein', got %q", command.Users[0])
+	}
+}
+
+func TestParseArgsUsersFlagCommaSeparated(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "-u", "alice,bob,charlie"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := []string{"alice", "bob", "charlie"}
+	if len(command.Users) != len(expected) {
+		t.Fatalf("expected %d users, got %d", len(expected), len(command.Users))
+	}
+	for i, name := range expected {
+		if command.Users[i] != name {
+			t.Errorf("expected user[%d] = %q, got %q", i, name, command.Users[i])
+		}
+	}
+}
+
+func TestParseArgsUsersFlagTrimsWhitespace(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "-u", "alice , bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(command.Users) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(command.Users))
+	}
+	if command.Users[0] != "alice" {
+		t.Errorf("expected user[0] = 'alice', got %q", command.Users[0])
+	}
+	if command.Users[1] != "bob" {
+		t.Errorf("expected user[1] = 'bob', got %q", command.Users[1])
+	}
+}
+
+func TestParseArgsUsersFlagSkipsEmpty(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "-u", "alice,,bob"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(command.Users) != 2 {
+		t.Fatalf("expected 2 users (empty segments skipped), got %d", len(command.Users))
+	}
+}
+
+func TestParseArgsUsersFlagWithoutValue(t *testing.T) {
+	_, err := ParseArgs([]string{"create", "devbox", "--users"})
+	if err == nil {
+		t.Fatal("expected error for --users without value")
+	}
+}
+
+func TestParseArgsShortUsersFlagWithoutValue(t *testing.T) {
+	_, err := ParseArgs([]string{"create", "devbox", "-u"})
+	if err == nil {
+		t.Fatal("expected error for -u without value")
+	}
+}
+
+func TestParseArgsUsersFlagWithOtherFlags(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "--aws", "-u", "gherlein", "-f", "/my/stacks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.ProviderFlag != "aws" {
+		t.Errorf("expected ProviderFlag 'aws', got %q", command.ProviderFlag)
+	}
+	if len(command.Users) != 1 || command.Users[0] != "gherlein" {
+		t.Errorf("expected users [gherlein], got %v", command.Users)
+	}
+	if command.FolderPath != "/my/stacks" {
+		t.Errorf("expected FolderPath '/my/stacks', got %q", command.FolderPath)
 	}
 }
 
@@ -491,14 +556,14 @@ func TestDetectProviderFromStackID(t *testing.T) {
 	}
 }
 
-func TestDetectProviderFromDNSDomain(t *testing.T) {
+func TestDetectProviderDNSDomainDoesNotForceAWS(t *testing.T) {
 	configuration := &config.Config{
 		VM:  &config.VMConfig{},
 		DNS: &config.DNSConfig{Domain: "example.com"},
 	}
 	result := DetectProvider("", configuration)
-	if result != "aws" {
-		t.Errorf("expected 'aws' from dns domain, got %q", result)
+	if result != "multipass" {
+		t.Errorf("expected 'multipass' (DNS alone should not force AWS), got %q", result)
 	}
 }
 
@@ -518,14 +583,14 @@ func TestDetectProviderFlagOverridesStackID(t *testing.T) {
 	}
 }
 
-func TestDetectProviderFlagOverridesDNS(t *testing.T) {
+func TestDetectProviderAWSFlagWithDNS(t *testing.T) {
 	configuration := &config.Config{
 		VM:  &config.VMConfig{},
 		DNS: &config.DNSConfig{Domain: "example.com"},
 	}
-	result := DetectProvider("local", configuration)
-	if result != "multipass" {
-		t.Errorf("expected 'multipass' (flag override), got %q", result)
+	result := DetectProvider("aws", configuration)
+	if result != "aws" {
+		t.Errorf("expected 'aws' (explicit flag), got %q", result)
 	}
 }
 
@@ -556,5 +621,41 @@ func TestDetectProviderEmptyDNSDomain(t *testing.T) {
 	result := DetectProvider("", configuration)
 	if result != "multipass" {
 		t.Errorf("expected 'multipass' with empty DNS domain, got %q", result)
+	}
+}
+
+func TestResolveStackFolderDefault(t *testing.T) {
+	t.Setenv("GOLOO_STACK_FOLDER", "")
+	command := &Command{}
+	result := resolveStackFolder(command)
+	if result != "stacks" {
+		t.Errorf("expected 'stacks', got %q", result)
+	}
+}
+
+func TestResolveStackFolderFromEnv(t *testing.T) {
+	t.Setenv("GOLOO_STACK_FOLDER", "/home/user/my-servers")
+	command := &Command{}
+	result := resolveStackFolder(command)
+	if result != "/home/user/my-servers" {
+		t.Errorf("expected '/home/user/my-servers', got %q", result)
+	}
+}
+
+func TestResolveStackFolderFlagOverridesEnv(t *testing.T) {
+	t.Setenv("GOLOO_STACK_FOLDER", "/home/user/my-servers")
+	command := &Command{FolderPath: "/opt/stacks"}
+	result := resolveStackFolder(command)
+	if result != "/opt/stacks" {
+		t.Errorf("expected '/opt/stacks', got %q", result)
+	}
+}
+
+func TestResolveStackFolderFlagWithoutEnv(t *testing.T) {
+	t.Setenv("GOLOO_STACK_FOLDER", "")
+	command := &Command{FolderPath: "/opt/stacks"}
+	result := resolveStackFolder(command)
+	if result != "/opt/stacks" {
+		t.Errorf("expected '/opt/stacks', got %q", result)
 	}
 }

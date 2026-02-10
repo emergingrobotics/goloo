@@ -67,8 +67,8 @@ flowchart TB
     end
 
     subgraph Storage["Storage"]
-        STACKS[(stacks/*.json)]
-        CLOUDINIT[(cloud-init/*.yaml)]
+        STACKS[(stacks/name/config.json)]
+        CLOUDINIT[(stacks/name/cloud-init.yaml)]
     end
 
     subgraph External["External APIs"]
@@ -99,7 +99,7 @@ flowchart TB
 | Component | Responsibility |
 |-----------|----------------|
 | Command Parser | Parse CLI flags (`create`, `delete`, `--aws`, etc.) |
-| Config Loader | Read JSON configs from `stacks/`, apply defaults, validate |
+| Config Loader | Read JSON configs from `stacks/<name>/config.json`, apply defaults, validate |
 | Provider Dispatcher | Route to Multipass or AWS based on flags/config |
 | Cloud-Init Processor | Substitute `${SSH_PUBLIC_KEY}` variables, validate YAML |
 | SSH Key Fetcher | Fetch public keys from `https://github.com/{user}.keys` |
@@ -122,7 +122,7 @@ vm.cpus               →    --cpus
 vm.memory             →    --memory
 vm.disk               →    --disk
 vm.image              →    (positional arg)
-vm.cloud_init_file    →    --cloud-init
+cloud-init.yaml       →    --cloud-init
 ```
 
 The cloud-init YAML passes through unchanged after SSH key substitution.
@@ -154,10 +154,10 @@ sequenceDiagram
     participant Multipass
 
     User->>CLI: goloo create devbox
-    CLI->>Config: Load stacks/devbox.json
+    CLI->>Config: Load stacks/devbox/config.json
     Config-->>CLI: VMConfig
 
-    CLI->>CloudInit: Process(cloud-init/dev.yaml, users)
+    CLI->>CloudInit: Process(stacks/devbox/cloud-init.yaml, users)
     CloudInit->>GitHub: GET /gherlein.keys
     GitHub-->>CloudInit: SSH public keys
     CloudInit->>CloudInit: Substitute ${SSH_PUBLIC_KEY}
@@ -188,10 +188,10 @@ sequenceDiagram
     participant R53
 
     User->>CLI: goloo create devbox --aws
-    CLI->>Config: Load stacks/devbox.json
+    CLI->>Config: Load stacks/devbox/config.json
     Config-->>CLI: VMConfig + DNSConfig
 
-    CLI->>CloudInit: Process(cloud-init/dev.yaml, users)
+    CLI->>CloudInit: Process(stacks/devbox/cloud-init.yaml, users)
     CloudInit->>GitHub: GET /gherlein.keys
     GitHub-->>CloudInit: SSH public keys
     CloudInit-->>CLI: Processed cloud-init content
@@ -233,7 +233,7 @@ sequenceDiagram
     participant External
 
     User->>CLI: goloo delete devbox
-    CLI->>Config: Load stacks/devbox.json
+    CLI->>Config: Load stacks/devbox/config.json
     Config-->>CLI: Config (with provider detection)
 
     alt Multipass (no stack_id)
@@ -281,7 +281,6 @@ erDiagram
         string memory
         string disk
         string image
-        string cloud_init_file
         string instance_type "AWS only"
         string region "AWS only"
         string vpc_id "AWS only, auto-discovered"
@@ -314,6 +313,14 @@ erDiagram
 
 ### Example Configs
 
+Each VM config lives in a named folder with `config.json` and an optional `cloud-init.yaml`:
+
+```
+stacks/devbox/
+├── config.json
+└── cloud-init.yaml
+```
+
 **Local Development (Multipass):**
 
 ```json
@@ -324,7 +331,6 @@ erDiagram
     "memory": "4G",
     "disk": "40G",
     "image": "24.04",
-    "cloud_init_file": "cloud-init/dev.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "gherlein"}
     ],
@@ -344,7 +350,6 @@ erDiagram
     "instance_type": "t3.medium",
     "os": "ubuntu-24.04",
     "region": "us-west-2",
-    "cloud_init_file": "cloud-init/dev.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "gherlein"}
     ]
@@ -372,7 +377,6 @@ A single config can work for both (DNS ignored for local):
     "instance_type": "t3.medium",
     "os": "ubuntu-24.04",
     "region": "us-west-2",
-    "cloud_init_file": "cloud-init/dev.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "gherlein"}
     ]
@@ -477,7 +481,7 @@ classDiagram
 
 ```mermaid
 flowchart LR
-    A[cloud-init/dev.yaml] --> B[Read Template]
+    A[stacks/name/cloud-init.yaml] --> B[Read Template]
     B --> C{Has Users?}
     C -->|Yes| D[Fetch GitHub Keys]
     D --> E[github.com/user.keys]
@@ -630,8 +634,7 @@ Commands:
 Flags:
   --aws         Use AWS provider (override config)
   --local       Use Multipass provider (override config)
-  --config      Path to config file
-  --cloud-init  Override cloud-init file
+  --folder, -f  Base folder for configs (default: stacks/)
 
 Backwards Compatibility (aws-ec2 style):
   -c            Shorthand for create
@@ -775,9 +778,11 @@ goloo/
 │           ├── dns.go       # Route53 operations
 │           ├── network.go   # VPC/Subnet discovery
 │           └── aws_test.go
-├── stacks/                  # Config files (gitignored)
-│   └── devbox.json
-├── cloud-init/              # Cloud-init templates
+├── stacks/                  # VM config folders (gitignored)
+│   └── devbox/
+│       ├── config.json
+│       └── cloud-init.yaml
+├── configs/                 # Shared cloud-init templates
 │   ├── base.yaml
 │   ├── dev.yaml
 │   └── claude-dev.yaml

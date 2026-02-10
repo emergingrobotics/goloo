@@ -5,14 +5,8 @@
     "memory": "2G",
     "disk": "20G",
     "image": "24.04",
-    "instance_type": "t3.small",
-    "cloud_init_file": "cloud-init/web-server.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "your-github-username"}
     ]
-  },
-  "dns": {
-    "hostname": "web",
-    "domain": "example.com"
   }
 }

@@ -19,7 +19,7 @@ Both users have passwordless sudo.
 
 1. [Install Multipass](https://multipass.run/)
 2. Build goloo: `make build` from the project root
-3. Edit `stacks/multi-user.json` and replace the GitHub usernames:
+3. Edit `config.json` and replace the GitHub usernames:
    - Change `alice` to the primary developer's GitHub username
    - Change `bot-account` to the deployment account's GitHub username
 
@@ -30,8 +30,8 @@ Both GitHub accounts need SSH public keys uploaded at `github.com/settings/keys`
 From the project root:
 
 ```bash
-cp examples/multi-user/stacks/multi-user.json stacks/
-cp examples/multi-user/cloud-init/multi-user.yaml cloud-init/
+mkdir -p stacks/multi-user
+cp examples/multi-user/config.json examples/multi-user/cloud-init.yaml stacks/multi-user/
 
 goloo create multi-user
 ```
@@ -94,8 +94,7 @@ goloo delete multi-user
 
 ```
 multi-user/
-├── cloud-init/
-│   └── multi-user.yaml          # cloud-init with two users and per-user SSH keys
-└── stacks/
-    └── multi-user.json           # Config with two users mapped to GitHub accounts
+├── README.md
+├── config.json              # Config with two users mapped to GitHub accounts
+└── cloud-init.yaml          # cloud-init with two users and per-user SSH keys
 ```

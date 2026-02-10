@@ -5,7 +5,6 @@
     "memory": "2G",
     "disk": "20G",
     "image": "24.04",
-    "cloud_init_file": "cloud-init/multi-user.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "alice"},
       {"username": "deploy", "github_username": "bot-account"}

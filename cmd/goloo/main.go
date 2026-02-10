@@ -23,12 +23,12 @@ func main() {
 }
 
 type Command struct {
-	Action        string
-	VMName        string
-	ProviderFlag  string
-	ConfigPath    string
-	CloudInitPath string
-	Verbose       bool
+	Action       string
+	VMName       string
+	ProviderFlag string
+	FolderPath   string
+	Users        []string
+	Verbose      bool
 }
 
 var verboseEnabled bool
@@ -197,18 +197,23 @@ func parseNameAndFlags(command *Command, remaining []string) (*Command, error) {
 			command.ProviderFlag = "aws"
 		case arg == "--local":
 			command.ProviderFlag = "local"
-		case arg == "--config" || arg == "-f":
+		case arg == "--folder" || arg == "-f":
 			if i+1 >= len(remaining) {
 				return nil, fmt.Errorf("%s requires a path argument", arg)
 			}
 			i++
-			command.ConfigPath = remaining[i]
-		case arg == "--cloud-init":
+			command.FolderPath = remaining[i]
+		case arg == "--users" || arg == "-u":
 			if i+1 >= len(remaining) {
-				return nil, fmt.Errorf("--cloud-init requires a path argument")
+				return nil, fmt.Errorf("%s requires a username argument", arg)
 			}
 			i++
-			command.CloudInitPath = remaining[i]
+			for _, name := range strings.Split(remaining[i], ",") {
+				trimmed := strings.TrimSpace(name)
+				if trimmed != "" {
+					command.Users = append(command.Users, trimmed)
+				}
+			}
 		case strings.HasPrefix(arg, "-"):
 			return nil, fmt.Errorf("unknown flag %q\nRun 'goloo help' for usage", arg)
 		default:
@@ -236,9 +241,6 @@ func DetectProvider(providerFlag string, configuration *config.Config) string {
 	if configuration.VM.StackID != "" {
 		return "aws"
 	}
-	if configuration.DNS != nil && configuration.DNS.Domain != "" {
-		return "aws"
-	}
 	return "multipass"
 }
 
@@ -253,19 +255,26 @@ func getProvider(providerName string, region string, verbose bool) (provider.VMP
 	}
 }
 
-func loadConfig(command *Command) (*config.Config, string, error) {
-	name := command.VMName
-	if command.ConfigPath != "" {
-		name = command.ConfigPath
+func resolveStackFolder(command *Command) string {
+	if command.FolderPath != "" {
+		return command.FolderPath
 	}
-	return config.Load(name)
+	if envFolder := os.Getenv("GOLOO_STACK_FOLDER"); envFolder != "" {
+		return envFolder
+	}
+	return "stacks"
 }
 
-func resolveCloudInitPath(command *Command, configuration *config.Config) string {
-	if command.CloudInitPath != "" {
-		return command.CloudInitPath
+func loadConfig(command *Command) (*config.Config, string, error) {
+	return config.Load(resolveStackFolder(command), command.VMName)
+}
+
+func resolveCloudInitPath(command *Command) string {
+	path := config.CloudInitPath(resolveStackFolder(command), command.VMName)
+	if _, err := os.Stat(path); err != nil {
+		return ""
 	}
-	return configuration.VM.CloudInitFile
+	return path
 }
 
 func cmdCreate(ctx context.Context, command *Command) error {
@@ -278,6 +287,22 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		configPath, configuration.VM.Name, configuration.VM.Image,
 		configuration.VM.CPUs, configuration.VM.Memory, configuration.VM.Disk)
 
+	if len(command.Users) > 0 {
+		users := make([]config.User, len(command.Users))
+		for i, githubUsername := range command.Users {
+			username := githubUsername
+			if i == 0 {
+				username = "ubuntu"
+			}
+			users[i] = config.User{
+				Username:       username,
+				GitHubUsername: githubUsername,
+			}
+		}
+		configuration.VM.Users = users
+		verboseLog("users overridden from CLI: %v", command.Users)
+	}
+
 	providerName := DetectProvider(command.ProviderFlag, configuration)
 	verboseLog("provider: %s", providerName)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
@@ -285,7 +310,7 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		return err
 	}
 
-	cloudInitSource := resolveCloudInitPath(command, configuration)
+	cloudInitSource := resolveCloudInitPath(command)
 	cloudInitPath := ""
 	if cloudInitSource != "" {
 		verboseLog("processing cloud-init template: %s", cloudInitSource)
@@ -509,11 +534,14 @@ func printUsage() {
 	fmt.Println("Flags:")
 	fmt.Println("  --aws               Use AWS provider")
 	fmt.Println("  --local             Use local Multipass provider")
-	fmt.Println("  --config, -f PATH   Config file path")
-	fmt.Println("  --cloud-init PATH   Cloud-init file path")
+	fmt.Println("  --folder, -f PATH   Base folder for configs (default: stacks/)")
+	fmt.Println("  --users, -u USERS   GitHub usernames for SSH keys (comma-separated)")
 	fmt.Println("  --verbose, -v       Show detailed progress")
 	fmt.Println("  --version           Show version")
 	fmt.Println("  --help, -h          Show this help")
+	fmt.Println()
+	fmt.Println("Environment Variables:")
+	fmt.Println("  GOLOO_STACK_FOLDER  Default base folder (overridden by --folder/-f)")
 	fmt.Println()
 	fmt.Println("Legacy Flags (aws-ec2 compatibility):")
 	fmt.Println("  -c -n <name>        Create AWS VM")
@@ -522,13 +550,15 @@ func printUsage() {
 	fmt.Println("Provider Auto-Detection:")
 	fmt.Println("  If no --aws or --local flag is given, the provider is detected from:")
 	fmt.Println("  1. Existing stack_id in config -> AWS")
-	fmt.Println("  2. DNS domain in config -> AWS")
-	fmt.Println("  3. Default -> Multipass (local)")
+	fmt.Println("  2. Default -> Multipass (local)")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  goloo create devbox                  Create local VM")
-	fmt.Println("  goloo create devbox --aws            Create AWS VM")
-	fmt.Println("  goloo delete devbox                  Delete VM (auto-detects provider)")
-	fmt.Println("  goloo ssh devbox                     SSH into VM")
-	fmt.Println("  goloo dns swap devbox                Update DNS to current IP")
+	fmt.Println("  goloo create devbox                         Create local VM (stacks/devbox/)")
+	fmt.Println("  goloo create devbox --aws                   Create AWS VM")
+	fmt.Println("  goloo create devbox -f ~/my-servers         Use ~/my-servers/devbox/")
+	fmt.Println("  goloo create devbox -u gherlein             Fetch SSH keys for gherlein")
+	fmt.Println("  goloo create devbox -u \"alice,bob\"           Fetch SSH keys for multiple users")
+	fmt.Println("  goloo delete devbox                         Delete VM (auto-detects provider)")
+	fmt.Println("  goloo ssh devbox                            SSH into VM")
+	fmt.Println("  goloo dns swap devbox                       Update DNS to current IP")
 }

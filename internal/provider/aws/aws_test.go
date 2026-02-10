@@ -108,12 +108,16 @@ func (f *fakeEC2) DescribeInstance(_ context.Context, _ string) (string, string,
 }
 
 type fakeRoute53 struct {
-	zoneID         string
-	findZoneError  error
-	upsertedRecords []string
-	deletedRecords  []string
-	upsertError    error
-	deleteError    error
+	zoneID           string
+	findZoneError    error
+	upsertedRecords  []string
+	deletedRecords   []string
+	upsertedCNAMEs   []string
+	deletedCNAMEs    []string
+	upsertError      error
+	deleteError      error
+	upsertCNAMEError error
+	deleteCNAMEError error
 }
 
 func (f *fakeRoute53) FindZoneID(_ context.Context, _ string) (string, error) {
@@ -131,6 +135,16 @@ func (f *fakeRoute53) UpsertARecord(_ context.Context, _ string, name string, ip
 func (f *fakeRoute53) DeleteARecord(_ context.Context, _ string, name string, _ string, _ int) error {
 	f.deletedRecords = append(f.deletedRecords, name)
 	return f.deleteError
+}
+
+func (f *fakeRoute53) UpsertCNAMERecord(_ context.Context, _ string, name string, target string, _ int) error {
+	f.upsertedCNAMEs = append(f.upsertedCNAMEs, name+"->"+target)
+	return f.upsertCNAMEError
+}
+
+func (f *fakeRoute53) DeleteCNAMERecord(_ context.Context, _ string, name string, _ string, _ int) error {
+	f.deletedCNAMEs = append(f.deletedCNAMEs, name)
+	return f.deleteCNAMEError
 }
 
 type fakeSSM struct {
@@ -721,6 +735,223 @@ func TestSwapDNSUsesExistingZoneID(t *testing.T) {
 	}
 	if len(route53.upsertedRecords) != 1 {
 		t.Error("Should still upsert the record")
+	}
+}
+
+func TestCreateDNSReusesExistingZoneID(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+	cloudInitPath := createCloudInitFile(t)
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:         "devbox",
+			InstanceType: "t3.micro",
+		},
+		DNS: &config.DNSConfig{
+			Hostname: "devbox",
+			Domain:   "example.com",
+			ZoneID:   "Z-PRECONFIGURED",
+			TTL:      60,
+		},
+	}
+
+	err := provider.Create(context.Background(), configuration, cloudInitPath)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if configuration.DNS.ZoneID != "Z-PRECONFIGURED" {
+		t.Errorf("Should reuse existing ZoneID, got %q", configuration.DNS.ZoneID)
+	}
+	if len(route53.upsertedRecords) != 1 {
+		t.Fatalf("Expected 1 upserted record, got %d", len(route53.upsertedRecords))
+	}
+}
+
+func TestCreateDNSWithApexDomain(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+	cloudInitPath := createCloudInitFile(t)
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:         "devbox",
+			InstanceType: "t3.micro",
+		},
+		DNS: &config.DNSConfig{
+			Hostname:     "devbox",
+			Domain:       "example.com",
+			TTL:          60,
+			IsApexDomain: true,
+		},
+	}
+
+	err := provider.Create(context.Background(), configuration, cloudInitPath)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if len(route53.upsertedRecords) != 2 {
+		t.Fatalf("Expected 2 upserted records (hostname + apex), got %d: %v", len(route53.upsertedRecords), route53.upsertedRecords)
+	}
+	if route53.upsertedRecords[0] != "devbox.example.com->54.1.2.3" {
+		t.Errorf("First record = %q, want hostname A record", route53.upsertedRecords[0])
+	}
+	if route53.upsertedRecords[1] != "example.com->54.1.2.3" {
+		t.Errorf("Second record = %q, want apex A record", route53.upsertedRecords[1])
+	}
+	if len(configuration.DNS.DNSRecords) != 2 {
+		t.Fatalf("Expected 2 DNS records in config, got %d", len(configuration.DNS.DNSRecords))
+	}
+	if configuration.DNS.DNSRecords[1].Name != "example.com" || configuration.DNS.DNSRecords[1].Type != "A" {
+		t.Errorf("Apex record = %+v, want A record for example.com", configuration.DNS.DNSRecords[1])
+	}
+}
+
+func TestCreateDNSWithCNAMEAliases(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+	cloudInitPath := createCloudInitFile(t)
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:         "devbox",
+			InstanceType: "t3.micro",
+		},
+		DNS: &config.DNSConfig{
+			Hostname:     "devbox",
+			Domain:       "example.com",
+			TTL:          60,
+			CNAMEAliases: []string{"www", "api"},
+		},
+	}
+
+	err := provider.Create(context.Background(), configuration, cloudInitPath)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if len(route53.upsertedRecords) != 1 {
+		t.Fatalf("Expected 1 A record upsert, got %d", len(route53.upsertedRecords))
+	}
+	if len(route53.upsertedCNAMEs) != 2 {
+		t.Fatalf("Expected 2 CNAME upserts, got %d: %v", len(route53.upsertedCNAMEs), route53.upsertedCNAMEs)
+	}
+	if route53.upsertedCNAMEs[0] != "www.example.com->devbox.example.com" {
+		t.Errorf("First CNAME = %q, want www->devbox", route53.upsertedCNAMEs[0])
+	}
+	if route53.upsertedCNAMEs[1] != "api.example.com->devbox.example.com" {
+		t.Errorf("Second CNAME = %q, want api->devbox", route53.upsertedCNAMEs[1])
+	}
+	if len(configuration.DNS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records in config, got %d", len(configuration.DNS.DNSRecords))
+	}
+	if configuration.DNS.DNSRecords[1].Type != "CNAME" {
+		t.Errorf("Second record type = %q, want CNAME", configuration.DNS.DNSRecords[1].Type)
+	}
+}
+
+func TestCreateDNSWithApexAndCNAME(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+	cloudInitPath := createCloudInitFile(t)
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:         "devbox",
+			InstanceType: "t3.micro",
+		},
+		DNS: &config.DNSConfig{
+			Hostname:     "devbox",
+			Domain:       "example.com",
+			TTL:          60,
+			IsApexDomain: true,
+			CNAMEAliases: []string{"www"},
+		},
+	}
+
+	err := provider.Create(context.Background(), configuration, cloudInitPath)
+	if err != nil {
+		t.Fatalf("Create() returned error: %v", err)
+	}
+
+	if len(route53.upsertedRecords) != 2 {
+		t.Fatalf("Expected 2 A records (hostname + apex), got %d", len(route53.upsertedRecords))
+	}
+	if len(route53.upsertedCNAMEs) != 1 {
+		t.Fatalf("Expected 1 CNAME, got %d", len(route53.upsertedCNAMEs))
+	}
+	if len(configuration.DNS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records total, got %d", len(configuration.DNS.DNSRecords))
+	}
+}
+
+func TestDeleteCleansUpCNAMERecords(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:      "devbox",
+			StackName: "goloo-devbox",
+			PublicIP:  "54.1.2.3",
+		},
+		DNS: &config.DNSConfig{
+			ZoneID: "Z1234567890",
+			FQDN:   "devbox.example.com",
+			DNSRecords: []config.DNSRecord{
+				{Name: "devbox.example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
+				{Name: "example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
+				{Name: "www.example.com", Type: "CNAME", Value: "devbox.example.com", TTL: 300},
+			},
+		},
+	}
+
+	err := provider.Delete(context.Background(), configuration)
+	if err != nil {
+		t.Fatalf("Delete() returned error: %v", err)
+	}
+
+	if len(route53.deletedRecords) != 2 {
+		t.Errorf("Expected 2 A record deletions, got %d: %v", len(route53.deletedRecords), route53.deletedRecords)
+	}
+	if len(route53.deletedCNAMEs) != 1 {
+		t.Errorf("Expected 1 CNAME deletion, got %d: %v", len(route53.deletedCNAMEs), route53.deletedCNAMEs)
+	}
+	if route53.deletedCNAMEs[0] != "www.example.com" {
+		t.Errorf("Deleted CNAME = %q, want www.example.com", route53.deletedCNAMEs[0])
+	}
+}
+
+func TestSwapDNSWithApexAndCNAME(t *testing.T) {
+	provider, _, _, route53, _ := newFakeProvider()
+
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Name:     "devbox",
+			PublicIP: "54.9.8.7",
+		},
+		DNS: &config.DNSConfig{
+			Hostname:     "devbox",
+			Domain:       "example.com",
+			TTL:          60,
+			IsApexDomain: true,
+			CNAMEAliases: []string{"www"},
+		},
+	}
+
+	err := provider.SwapDNS(context.Background(), configuration)
+	if err != nil {
+		t.Fatalf("SwapDNS() returned error: %v", err)
+	}
+
+	if len(route53.upsertedRecords) != 2 {
+		t.Fatalf("Expected 2 A record upserts (hostname + apex), got %d", len(route53.upsertedRecords))
+	}
+	if len(route53.upsertedCNAMEs) != 1 {
+		t.Fatalf("Expected 1 CNAME upsert, got %d", len(route53.upsertedCNAMEs))
+	}
+	if route53.upsertedCNAMEs[0] != "www.example.com->devbox.example.com" {
+		t.Errorf("CNAME = %q, want www->devbox", route53.upsertedCNAMEs[0])
+	}
+	if len(configuration.DNS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records, got %d", len(configuration.DNS.DNSRecords))
 	}
 }
 

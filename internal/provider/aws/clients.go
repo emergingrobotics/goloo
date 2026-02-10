@@ -24,6 +24,8 @@ type Route53Client interface {
 	FindZoneID(context context.Context, domain string) (string, error)
 	UpsertARecord(context context.Context, zoneID string, name string, ip string, ttl int) error
 	DeleteARecord(context context.Context, zoneID string, name string, ip string, ttl int) error
+	UpsertCNAMERecord(context context.Context, zoneID string, name string, target string, ttl int) error
+	DeleteCNAMERecord(context context.Context, zoneID string, name string, target string, ttl int) error
 }
 
 type SSMClient interface {

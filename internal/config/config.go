@@ -6,9 +6,8 @@ type Config struct {
 }
 
 type VMConfig struct {
-	Name          string  `json:"name"`
-	CloudInitFile string  `json:"cloud_init_file,omitempty"`
-	Users         []User  `json:"users,omitempty"`
+	Name  string `json:"name"`
+	Users []User `json:"users,omitempty"`
 	CPUs          int     `json:"cpus,omitempty"`
 	Memory        string  `json:"memory,omitempty"`
 	Disk          string  `json:"disk,omitempty"`

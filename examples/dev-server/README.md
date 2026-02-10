@@ -4,8 +4,6 @@ A general-purpose development VM with build tools, modern CLI utilities, and eno
 
 ## What gets installed
 
-Uses the `configs/dev.yaml` cloud-init from the project root, which includes:
-
 - build-essential (gcc, make, etc.)
 - ripgrep, fd-find, fzf, tmux
 - git, curl, wget, jq, tree
@@ -15,14 +13,15 @@ Uses the `configs/dev.yaml` cloud-init from the project root, which includes:
 
 1. [Install Multipass](https://multipass.run/)
 2. Build goloo: `make build` from the project root
-3. Edit `stacks/dev.json` and replace `your-github-username` with your actual GitHub username
+3. Edit `config.json` and replace `your-github-username` with your actual GitHub username
 
 ## Create the VM
 
 From the project root:
 
 ```bash
-cp examples/dev-server/stacks/dev.json stacks/
+mkdir -p stacks/dev
+cp examples/dev-server/config.json examples/dev-server/cloud-init.yaml stacks/dev/
 
 goloo create dev
 ```
@@ -48,7 +47,7 @@ git --version
 
 If you want to edit files on the host and compile in the VM, add a mount to the config before creating:
 
-Edit `stacks/dev.json`:
+Edit `stacks/dev/config.json`:
 
 ```json
 {
@@ -58,7 +57,6 @@ Edit `stacks/dev.json`:
     "memory": "4G",
     "disk": "40G",
     "image": "24.04",
-    "cloud_init_file": "configs/dev.yaml",
     "mounts": [
       {"source": "/path/to/your/project", "target": "/home/ubuntu/project"}
     ],
@@ -71,7 +69,7 @@ Edit `stacks/dev.json`:
 
 ## Adjust resources
 
-For heavier workloads, increase the VM resources in `stacks/dev.json`:
+For heavier workloads, increase the VM resources in `stacks/dev/config.json`:
 
 ```json
 {
@@ -96,8 +94,7 @@ goloo delete dev
 
 ```
 dev-server/
-└── stacks/
-    └── dev.json                 # Config referencing configs/dev.yaml
+├── README.md
+├── config.json              # Config referencing t3.medium for AWS
+└── cloud-init.yaml          # Dev tools: build-essential, ripgrep, tmux, etc.
 ```
-
-The cloud-init file (`configs/dev.yaml`) lives in the project root since it's a shared config usable by any example.

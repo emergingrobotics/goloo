@@ -6,23 +6,24 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 )
 
 var validUsernamePattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
-func ResolvePath(name string) string {
-	if filepath.IsAbs(name) {
-		return name
-	}
-	if strings.Contains(name, string(filepath.Separator)) || strings.HasSuffix(name, ".json") {
-		return name
-	}
-	return filepath.Join("stacks", name+".json")
+func ResolveFolder(folder string, name string) string {
+	return filepath.Join(folder, name)
 }
 
-func Load(name string) (*Config, string, error) {
-	path := ResolvePath(name)
+func ConfigPath(folder string, name string) string {
+	return filepath.Join(ResolveFolder(folder, name), "config.json")
+}
+
+func CloudInitPath(folder string, name string) string {
+	return filepath.Join(ResolveFolder(folder, name), "cloud-init.yaml")
+}
+
+func Load(folder string, name string) (*Config, string, error) {
+	path := ConfigPath(folder, name)
 
 	data, err := os.ReadFile(path)
 	if err != nil {

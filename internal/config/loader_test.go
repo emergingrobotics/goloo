@@ -7,42 +7,50 @@ import (
 	"testing"
 )
 
-func TestResolvePathFromName(t *testing.T) {
-	got := ResolvePath("devbox")
-	want := filepath.Join("stacks", "devbox.json")
+func TestResolveFolderJoinsComponents(t *testing.T) {
+	got := ResolveFolder("stacks", "devbox")
+	want := filepath.Join("stacks", "devbox")
 	if got != want {
-		t.Errorf("ResolvePath(\"devbox\") = %q, want %q", got, want)
+		t.Errorf("ResolveFolder(\"stacks\", \"devbox\") = %q, want %q", got, want)
 	}
 }
 
-func TestResolvePathFromJSONFilename(t *testing.T) {
-	got := ResolvePath("devbox.json")
-	want := "devbox.json"
+func TestConfigPathBuildsCorrectPath(t *testing.T) {
+	got := ConfigPath("stacks", "devbox")
+	want := filepath.Join("stacks", "devbox", "config.json")
 	if got != want {
-		t.Errorf("ResolvePath(\"devbox.json\") = %q, want %q", got, want)
+		t.Errorf("ConfigPath(\"stacks\", \"devbox\") = %q, want %q", got, want)
 	}
 }
 
-func TestResolvePathFromAbsolutePath(t *testing.T) {
-	got := ResolvePath("/tmp/myconfig.json")
-	want := "/tmp/myconfig.json"
+func TestCloudInitPathBuildsCorrectPath(t *testing.T) {
+	got := CloudInitPath("stacks", "devbox")
+	want := filepath.Join("stacks", "devbox", "cloud-init.yaml")
 	if got != want {
-		t.Errorf("ResolvePath(\"/tmp/myconfig.json\") = %q, want %q", got, want)
+		t.Errorf("CloudInitPath(\"stacks\", \"devbox\") = %q, want %q", got, want)
 	}
 }
 
-func TestResolvePathFromRelativeWithSeparator(t *testing.T) {
-	got := ResolvePath("configs/devbox.json")
-	want := "configs/devbox.json"
+func TestConfigPathWithCustomFolder(t *testing.T) {
+	got := ConfigPath("/home/user/servers", "web")
+	want := filepath.Join("/home/user/servers", "web", "config.json")
 	if got != want {
-		t.Errorf("ResolvePath(\"configs/devbox.json\") = %q, want %q", got, want)
+		t.Errorf("ConfigPath with custom folder = %q, want %q", got, want)
+	}
+}
+
+func TestCloudInitPathWithCustomFolder(t *testing.T) {
+	got := CloudInitPath("/home/user/servers", "web")
+	want := filepath.Join("/home/user/servers", "web", "cloud-init.yaml")
+	if got != want {
+		t.Errorf("CloudInitPath with custom folder = %q, want %q", got, want)
 	}
 }
 
 func TestLoadValidConfig(t *testing.T) {
 	directory := t.TempDir()
-	stacksDirectory := filepath.Join(directory, "stacks")
-	os.MkdirAll(stacksDirectory, 0755)
+	vmDirectory := filepath.Join(directory, "devbox")
+	os.MkdirAll(vmDirectory, 0755)
 
 	configJSON := `{
   "vm": {
@@ -54,15 +62,15 @@ func TestLoadValidConfig(t *testing.T) {
     "users": [{"username": "ubuntu", "github_username": "gherlein"}]
   }
 }`
-	configPath := filepath.Join(directory, "stacks", "devbox.json")
-	os.WriteFile(configPath, []byte(configJSON), 0644)
+	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte(configJSON), 0644)
 
-	configuration, path, err := Load(configPath)
+	configuration, path, err := Load(directory, "devbox")
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
-	if path != configPath {
-		t.Errorf("Load() path = %q, want %q", path, configPath)
+	expectedPath := filepath.Join(directory, "devbox", "config.json")
+	if path != expectedPath {
+		t.Errorf("Load() path = %q, want %q", path, expectedPath)
 	}
 	if configuration.VM.Name != "devbox" {
 		t.Errorf("VM.Name = %q, want %q", configuration.VM.Name, "devbox")
@@ -75,18 +83,20 @@ func TestLoadValidConfig(t *testing.T) {
 	}
 }
 
-func TestLoadConfigFileNotFound(t *testing.T) {
-	_, _, err := Load("/nonexistent/path.json")
+func TestLoadConfigFolderNotFound(t *testing.T) {
+	_, _, err := Load("/nonexistent", "devbox")
 	if err == nil {
-		t.Fatal("Load() should return error for nonexistent file")
+		t.Fatal("Load() should return error for nonexistent folder")
 	}
 }
 
 func TestLoadConfigInvalidJSON(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "bad.json")
-	os.WriteFile(path, []byte("{not valid json}"), 0644)
+	directory := t.TempDir()
+	vmDirectory := filepath.Join(directory, "bad")
+	os.MkdirAll(vmDirectory, 0755)
+	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte("{not valid json}"), 0644)
 
-	_, _, err := Load(path)
+	_, _, err := Load(directory, "bad")
 	if err == nil {
 		t.Fatal("Load() should return error for invalid JSON")
 	}
@@ -297,17 +307,21 @@ func TestSaveAndReload(t *testing.T) {
 		},
 	}
 
-	path := filepath.Join(t.TempDir(), "roundtrip.json")
-	if err := Save(path, original); err != nil {
+	directory := t.TempDir()
+	vmDirectory := filepath.Join(directory, "devbox")
+	os.MkdirAll(vmDirectory, 0755)
+	configPath := filepath.Join(vmDirectory, "config.json")
+
+	if err := Save(configPath, original); err != nil {
 		t.Fatalf("Save() returned error: %v", err)
 	}
 
-	loaded, loadedPath, err := Load(path)
+	loaded, loadedPath, err := Load(directory, "devbox")
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
-	if loadedPath != path {
-		t.Errorf("Load() path = %q, want %q", loadedPath, path)
+	if loadedPath != configPath {
+		t.Errorf("Load() path = %q, want %q", loadedPath, configPath)
 	}
 
 	if !reflect.DeepEqual(original.VM.Name, loaded.VM.Name) {
@@ -346,11 +360,12 @@ func TestSaveCreatesValidJSON(t *testing.T) {
 }
 
 func TestLoadAppliesDefaults(t *testing.T) {
-	configJSON := `{"vm": {"name": "devbox"}}`
-	path := filepath.Join(t.TempDir(), "minimal.json")
-	os.WriteFile(path, []byte(configJSON), 0644)
+	directory := t.TempDir()
+	vmDirectory := filepath.Join(directory, "devbox")
+	os.MkdirAll(vmDirectory, 0755)
+	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte(`{"vm": {"name": "devbox"}}`), 0644)
 
-	configuration, _, err := Load(path)
+	configuration, _, err := Load(directory, "devbox")
 	if err != nil {
 		t.Fatalf("Load() returned error: %v", err)
 	}
@@ -364,11 +379,12 @@ func TestLoadAppliesDefaults(t *testing.T) {
 }
 
 func TestLoadValidatesAfterParsing(t *testing.T) {
-	configJSON := `{"vm": {"name": ""}}`
-	path := filepath.Join(t.TempDir(), "invalid.json")
-	os.WriteFile(path, []byte(configJSON), 0644)
+	directory := t.TempDir()
+	vmDirectory := filepath.Join(directory, "invalid")
+	os.MkdirAll(vmDirectory, 0755)
+	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte(`{"vm": {"name": ""}}`), 0644)
 
-	_, _, err := Load(path)
+	_, _, err := Load(directory, "invalid")
 	if err == nil {
 		t.Fatal("Load() should return validation error for empty name")
 	}

@@ -16,11 +16,32 @@ Goloo uses one JSON config and one cloud-init YAML to create the same server in 
 
 ## Quick Start
 
-### 1. Write a cloud-init file
+### 1. Create a config folder
+
+Each VM config lives in its own folder under `stacks/`. The folder contains a `config.json` and an optional `cloud-init.yaml`.
+
+Create `stacks/web-server/config.json`:
+
+```json
+{
+  "vm": {
+    "name": "web-server",
+    "cpus": 2,
+    "memory": "2G",
+    "disk": "20G",
+    "image": "24.04",
+    "users": [
+      {"username": "ubuntu", "github_username": "your-github-username"}
+    ]
+  }
+}
+```
+
+### 2. Write a cloud-init file
 
 This is a standard [cloud-init](https://cloudinit.readthedocs.io/) YAML that defines what your server looks like. Goloo fetches SSH keys from GitHub automatically using the `${SSH_PUBLIC_KEY}` placeholder.
 
-Create `cloud-init/web-server.yaml`:
+Create `stacks/web-server/cloud-init.yaml`:
 
 ```yaml
 #cloud-config
@@ -49,26 +70,6 @@ runcmd:
   - systemctl start nginx
 ```
 
-### 2. Write a config file
-
-Create `stacks/web-server.json`:
-
-```json
-{
-  "vm": {
-    "name": "web-server",
-    "cpus": 2,
-    "memory": "2G",
-    "disk": "20G",
-    "image": "24.04",
-    "cloud_init_file": "cloud-init/web-server.yaml",
-    "users": [
-      {"username": "ubuntu", "github_username": "your-github-username"}
-    ]
-  }
-}
-```
-
 ### 3. Create the server locally
 
 ```bash
@@ -83,33 +84,20 @@ goloo ssh web-server
 
 ### 4. Deploy the same server to AWS
 
-Add a `dns` section to the config for Route53 DNS (optional):
-
-```json
-{
-  "vm": {
-    "name": "web-server",
-    "cpus": 2,
-    "memory": "2G",
-    "disk": "20G",
-    "image": "24.04",
-    "instance_type": "t3.small",
-    "cloud_init_file": "cloud-init/web-server.yaml",
-    "users": [
-      {"username": "ubuntu", "github_username": "your-github-username"}
-    ]
-  },
-  "dns": {
-    "hostname": "web",
-    "domain": "example.com"
-  }
-}
-```
-
-Then deploy:
+See `examples/aws-web-server/` for a complete AWS config with all parameters (`instance_type`, `os`, `region`, `dns`). Copy it and edit:
 
 ```bash
-goloo create web-server --aws
+mkdir -p stacks/aws-web-server
+cp examples/aws-web-server/config.json examples/aws-web-server/cloud-init.yaml stacks/aws-web-server/
+# edit stacks/aws-web-server/config.json with your domain and GitHub username
+
+goloo create aws-web-server --aws
+```
+
+Or skip editing the config entirely with the `-u` flag:
+
+```bash
+goloo create aws-web-server --aws -f ./examples/ -u gherlein
 ```
 
 Goloo creates a CloudFormation stack with an EC2 instance, security group, and (if dns is configured) a Route53 A record pointing `web.example.com` at the instance IP.
@@ -118,7 +106,7 @@ Goloo creates a CloudFormation stack with an EC2 instance, security group, and (
 
 A more complete example — a polyglot dev server with Docker, Go, Node.js, and Python:
 
-`stacks/dev.json`:
+`stacks/dev/config.json`:
 
 ```json
 {
@@ -129,7 +117,6 @@ A more complete example — a polyglot dev server with Docker, Go, Node.js, and 
     "disk": "40G",
     "image": "24.04",
     "instance_type": "t3.medium",
-    "cloud_init_file": "cloud-init/dev.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "your-github-username"}
     ]
@@ -137,7 +124,7 @@ A more complete example — a polyglot dev server with Docker, Go, Node.js, and 
 }
 ```
 
-Several cloud-init configs are included for common setups:
+Several cloud-init templates are included in `configs/` for common setups. Copy one to `stacks/dev/cloud-init.yaml`:
 
 | Config | What it installs |
 |--------|-----------------|
@@ -176,22 +163,59 @@ goloo start <name>              Start VM
 goloo dns swap <name>           Update DNS A record to current VM IP
 ```
 
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--aws` | Use AWS provider |
+| `--local` | Use local Multipass provider |
+| `--folder`, `-f PATH` | Base folder for configs (default: `stacks/`) |
+| `--users`, `-u USERS` | GitHub usernames for SSH key injection (comma-separated) |
+| `--verbose`, `-v` | Show detailed progress |
+| `--version` | Show version |
+| `--help`, `-h` | Show help |
+
 Flags can go in any order:
 
 ```bash
-goloo create web-server --aws --cloud-init cloud-init/custom.yaml
-goloo create --aws web-server --config stacks/prod.json
+goloo create web-server --aws
+goloo create --aws web-server -f ~/my-servers
+goloo create web-server -u gherlein
+goloo create web-server -u "alice,bob"
 ```
+
+### The `--users` flag
+
+The `--users`/`-u` flag provides GitHub usernames whose SSH public keys are fetched and injected into the cloud-init template. This overrides any users defined in the config JSON.
+
+```bash
+goloo create web-server -f ./examples/ -u gherlein
+```
+
+The first username maps to the `ubuntu` VM user (the default for Multipass and most cloud-init templates). Additional usernames become both the VM user and the GitHub lookup:
+
+```bash
+goloo create web-server -u "alice,deploy-bot"
+# alice  → VM user "ubuntu", SSH keys from github.com/alice.keys
+# deploy-bot → VM user "deploy-bot", SSH keys from github.com/deploy-bot.keys
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `GOLOO_STACK_FOLDER` | Default base folder for configs (overridden by `--folder`/`-f`) |
+
+Precedence: `--folder`/`-f` flag > `GOLOO_STACK_FOLDER` > `stacks/`
 
 ### Provider Auto-Detection
 
 When you don't pass `--aws` or `--local`, goloo detects the provider from the config:
 
 1. Config has `stack_id` (previously created with AWS) → AWS
-2. Config has `dns.domain` → AWS
-3. Otherwise → Multipass
+2. Otherwise → Multipass
 
-This means `goloo delete web-server` does the right thing regardless of where the VM was created.
+A config can include a `dns` section without triggering AWS — DNS records are only created when you explicitly pass `--aws`. This means `goloo delete web-server` does the right thing regardless of where the VM was created.
 
 ### Legacy Flags
 
@@ -216,7 +240,6 @@ goloo -d -n web-server    # Same as: goloo delete web-server --aws
 | `instance_type` | "t3.micro" | EC2 instance type (AWS) |
 | `os` | "ubuntu-24.04" | AMI lookup key (AWS) |
 | `region` | "us-east-1" | AWS region |
-| `cloud_init_file` | | Path to cloud-init YAML |
 | `users` | | List of `{"username", "github_username"}` for SSH key injection |
 | `vpc_id` | | Specific VPC (AWS, auto-discovered if omitted) |
 | `subnet_id` | | Specific subnet (AWS, auto-discovered if omitted) |
@@ -229,10 +252,15 @@ goloo -d -n web-server    # Same as: goloo delete web-server --aws
 | `hostname` | vm.name | Hostname portion of the DNS record |
 | `domain` | | Route53 hosted zone domain |
 | `ttl` | 300 | DNS record TTL in seconds |
+| `zone_id` | | Route53 zone ID (auto-looked up from domain if omitted) |
+| `is_apex_domain` | false | Create an A record at the zone apex (bare domain) |
+| `cname_aliases` | | Additional CNAME records pointing at the hostname (e.g., `["www"]`) |
 
 ### Supported AWS operating systems
 
 `ubuntu-24.04`, `ubuntu-22.04`, `ubuntu-20.04`, `amazon-linux-2023`, `amazon-linux-2`, `debian-12`, `debian-11`
+
+See `examples/aws-web-server/` for a complete config with all AWS fields populated.
 
 ## Cloud-Init Variables
 

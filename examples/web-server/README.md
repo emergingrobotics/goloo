@@ -13,15 +13,15 @@ An nginx web server with TLS (certbot), intrusion prevention (fail2ban), and a f
 
 1. [Install Multipass](https://multipass.run/)
 2. Build goloo: `make build` from the project root
-3. Edit `stacks/web-server.json` and replace `your-github-username` with your actual GitHub username (this is how goloo fetches your SSH public keys)
+3. Edit `config.json` and replace `your-github-username` with your actual GitHub username (this is how goloo fetches your SSH public keys)
 
 ## Create the VM
 
 From the project root:
 
 ```bash
-cp examples/web-server/stacks/web-server.json stacks/
-cp examples/web-server/cloud-init/web-server.yaml cloud-init/
+mkdir -p stacks/web-server
+cp examples/web-server/config.json examples/web-server/cloud-init.yaml stacks/web-server/
 
 goloo create web-server
 ```
@@ -67,14 +67,7 @@ goloo delete web-server    # permanently delete
 
 ## Deploy to AWS instead
 
-Copy the AWS variant and edit your GitHub username and DNS domain:
-
-```bash
-cp examples/web-server/stacks/web-server-aws.json stacks/web-server.json
-```
-
-Edit `stacks/web-server.json`:
-- Set `github_username` to your GitHub username
+The same config file works for both local and AWS. Edit `stacks/web-server/config.json`:
 - Set `dns.domain` to a Route53 hosted zone you control
 - Set `dns.hostname` to the subdomain you want
 
@@ -88,9 +81,7 @@ goloo create web-server --aws
 
 ```
 web-server/
-├── cloud-init/
-│   └── web-server.yaml         # cloud-init: nginx, certbot, fail2ban, ufw
-└── stacks/
-    ├── web-server.json          # Config for local Multipass VM
-    └── web-server-aws.json      # Config for AWS with Route53 DNS
+├── README.md
+├── config.json            # Config for local and AWS
+└── cloud-init.yaml        # cloud-init: nginx, certbot, fail2ban, ufw
 ```

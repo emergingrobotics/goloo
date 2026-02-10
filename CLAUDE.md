@@ -26,7 +26,7 @@ vm.cpus               →    --cpus
 vm.memory             →    --memory
 vm.disk               →    --disk
 vm.image              →    (positional arg)
-vm.cloud_init_file    →    --cloud-init
+cloud-init.yaml       →    --cloud-init
 ```
 
 The cloud-init YAML passes through unchanged. Multipass and AWS EC2 both use cloud-init natively.
@@ -42,7 +42,17 @@ DNS uses:
 - `dns.hostname` from config (or `vm.name` if not specified)
 - `dns.domain` from config (optional; DNS records won't be created if absent)
 
-## Config File Format
+## Config Layout
+
+Each VM's configuration lives in a named folder containing `config.json` and an optional `cloud-init.yaml`:
+
+```
+stacks/devbox/
+├── config.json
+└── cloud-init.yaml
+```
+
+`config.json`:
 
 ```json
 {
@@ -52,7 +62,6 @@ DNS uses:
     "memory": "4G",
     "disk": "40G",
     "image": "24.04",
-    "cloud_init_file": "cloud-init/dev.yaml",
     "users": [
       {"username": "ubuntu", "github_username": "gherlein"}
     ]
@@ -64,7 +73,7 @@ DNS uses:
 }
 ```
 
-For local VMs, `dns` section is ignored. For AWS, it's optional — DNS records are only created when the section is present.
+For local VMs, `dns` section is ignored. For AWS, it's optional — DNS records are only created when the section is present. Cloud-init is optional — if `cloud-init.yaml` doesn't exist in the folder, the VM is created without it.
 
 ## Cloud-Init Files
 
@@ -92,8 +101,11 @@ goloo/
 │       ├── interface.go
 │       ├── multipass/  # Shells to multipass CLI
 │       └── aws/        # AWS SDK (CloudFormation, Route53)
-├── stacks/             # Config files (gitignored)
-├── cloud-init/         # Cloud-init templates
+├── stacks/             # VM config folders (gitignored)
+│   └── <name>/
+│       ├── config.json
+│       └── cloud-init.yaml
+├── configs/            # Shared cloud-init templates
 └── docs/
     ├── DESIGN.md       # Architecture and diagrams
     ├── PLAN.md         # Development plan
@@ -127,20 +139,21 @@ multipass launch 24.04 \
   --cpus 4 \
   --memory 4G \
   --disk 40G \
-  --cloud-init cloud-init/dev.yaml
+  --cloud-init stacks/devbox/cloud-init.yaml
 ```
 
 ## CLI Commands
 
 ```bash
-goloo create <name>           # Local VM (multipass)
-goloo create <name> --aws     # AWS EC2 instance
-goloo delete <name>           # Delete (detects provider from config)
-goloo list                    # List all VMs (both providers)
-goloo ssh <name>              # SSH into VM
-goloo status <name>           # Show VM status
-goloo stop <name>             # Stop a VM
-goloo start <name>            # Start a stopped VM
+goloo create <name>                    # Local VM from stacks/<name>/
+goloo create <name> --aws              # AWS EC2 instance
+goloo create <name> -f ~/my-servers    # Use ~/my-servers/<name>/
+goloo delete <name>                    # Delete (detects provider from config)
+goloo list                             # List all VMs (both providers)
+goloo ssh <name>                       # SSH into VM
+goloo status <name>                    # Show VM status
+goloo stop <name>                      # Stop a VM
+goloo start <name>                     # Start a stopped VM
 ```
 
 ## Testing Requirements
