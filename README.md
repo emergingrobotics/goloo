@@ -212,7 +212,7 @@ Precedence: `--folder`/`-f` flag > `GOLOO_STACK_FOLDER` > `stacks/`
 
 When you don't pass `--aws` or `--local`, goloo detects the provider from the config:
 
-1. Config has `stack_id` (previously created with AWS) → AWS
+1. Config has an `aws` state section (previously created with AWS) → AWS
 2. Otherwise → Multipass
 
 A config can include a `dns` section without triggering AWS — DNS records are only created when you explicitly pass `--aws`. This means `goloo delete web-server` does the right thing regardless of where the VM was created.
@@ -226,35 +226,212 @@ goloo -c -n web-server    # Same as: goloo create web-server --aws
 goloo -d -n web-server    # Same as: goloo delete web-server --aws
 ```
 
-## Config Reference
+## Config File
 
-### vm section
+Each VM's configuration lives in a named folder under a base directory (default `stacks/`):
+
+```
+stacks/
+└── web-server/
+    ├── config.json
+    └── cloud-init.yaml
+```
+
+The `config.json` file has two types of sections: **input sections** that you write by hand, and **state sections** that goloo manages automatically.
+
+### Input vs State
+
+| Section | Type | Who writes it | When |
+|---------|------|---------------|------|
+| `vm` | Input | You | Before first `goloo create` |
+| `dns` | Input | You | Before first `goloo create` |
+| `local` | State | Goloo | Written by `goloo create`, removed by `goloo delete` |
+| `aws` | State | Goloo | Written by `goloo create --aws`, removed by `goloo delete` |
+
+Input sections (`vm`, `dns`) are never modified by goloo. They define what you want. State sections (`local`, `aws`) track what goloo created, so it knows how to manage and clean up resources later.
+
+Because input and state are separate, the same config supports simultaneous local and AWS deployments. Creating a local VM writes a `local` section; creating an AWS instance writes an `aws` section. Deleting one removes only its state section without touching the other.
+
+### Minimal config
+
+A config file needs only a `vm` section with a name and at least one user:
+
+```json
+{
+  "vm": {
+    "name": "devbox",
+    "users": [
+      {"username": "ubuntu", "github_username": "your-github-username"}
+    ]
+  }
+}
+```
+
+Everything else has defaults. This creates a VM with 2 CPUs, 2G RAM, 20G disk, Ubuntu 24.04.
+
+### Full config example
+
+This shows every input field:
+
+```json
+{
+  "vm": {
+    "name": "web-server",
+    "cpus": 4,
+    "memory": "4G",
+    "disk": "40G",
+    "image": "24.04",
+    "instance_type": "t3.small",
+    "os": "ubuntu-24.04",
+    "region": "us-east-1",
+    "vpc_id": "",
+    "subnet_id": "",
+    "mounts": [
+      {"source": "/home/user/code", "target": "/home/ubuntu/code"}
+    ],
+    "users": [
+      {"username": "ubuntu", "github_username": "alice"},
+      {"username": "deploy", "github_username": "deploy-bot"}
+    ]
+  },
+  "dns": {
+    "hostname": "web",
+    "domain": "example.com",
+    "ttl": 300,
+    "zone_id": "",
+    "is_apex_domain": true,
+    "cname_aliases": ["www"]
+  }
+}
+```
+
+### After creating a local VM
+
+After `goloo create web-server`, goloo adds a `local` section:
+
+```json
+{
+  "vm": { ... },
+  "local": {
+    "ip": "192.168.64.5"
+  }
+}
+```
+
+After `goloo delete web-server`, the `local` section is removed entirely.
+
+### After creating an AWS instance
+
+After `goloo create web-server --aws`, goloo adds an `aws` section with all the resources it provisioned:
+
+```json
+{
+  "vm": { ... },
+  "dns": { ... },
+  "aws": {
+    "public_ip": "54.1.2.3",
+    "instance_id": "i-0123456789abcdef0",
+    "stack_id": "arn:aws:cloudformation:us-east-1:123456:stack/goloo-web-server/abc",
+    "stack_name": "goloo-web-server",
+    "security_group": "sg-abc123",
+    "ami_id": "ami-0123456789abcdef0",
+    "vpc_id": "vpc-abc123",
+    "subnet_id": "subnet-def456",
+    "zone_id": "Z1234567890",
+    "fqdn": "web.example.com",
+    "dns_records": [
+      {"name": "web.example.com", "type": "A", "value": "54.1.2.3", "ttl": 300},
+      {"name": "example.com", "type": "A", "value": "54.1.2.3", "ttl": 300},
+      {"name": "www.example.com", "type": "CNAME", "value": "web.example.com", "ttl": 300}
+    ]
+  }
+}
+```
+
+After `goloo delete web-server`, the entire `aws` section is removed. The `vm` and `dns` input sections stay intact so you can re-create the server without editing the config.
+
+If goloo created a VPC and subnet (because no default VPC existed), the `aws` section also tracks those resources so they are cleaned up on delete:
+
+```json
+{
+  "aws": {
+    "created_vpc": true,
+    "created_subnet": true,
+    "internet_gateway_id": "igw-789",
+    "route_table_id": "rtb-abc",
+    "route_table_association_id": "rtbassoc-def",
+    ...
+  }
+}
+```
+
+### Simultaneous local and AWS deployments
+
+Because state is stored in separate sections, both can exist at once:
+
+```json
+{
+  "vm": { ... },
+  "dns": { ... },
+  "local": {
+    "ip": "192.168.64.5"
+  },
+  "aws": {
+    "public_ip": "54.1.2.3",
+    "instance_id": "i-0123456789abcdef0",
+    ...
+  }
+}
+```
+
+Delete each independently:
+
+```bash
+goloo delete web-server --local   # removes local section only
+goloo delete web-server --aws     # removes aws section only
+```
+
+### vm section reference
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `name` | (required) | VM name, used for stack naming and config lookup |
 | `cpus` | 2 | Number of CPUs (Multipass) |
-| `memory` | "2G" | RAM allocation (Multipass) |
-| `disk` | "20G" | Disk size (Multipass) |
-| `image` | "24.04" | Ubuntu version (Multipass) |
-| `instance_type` | "t3.micro" | EC2 instance type (AWS) |
-| `os` | "ubuntu-24.04" | AMI lookup key (AWS) |
-| `region` | "us-east-1" | AWS region |
-| `users` | | List of `{"username", "github_username"}` for SSH key injection |
-| `vpc_id` | | Specific VPC (AWS, auto-discovered if omitted) |
-| `subnet_id` | | Specific subnet (AWS, auto-discovered if omitted) |
-| `mounts` | | List of `{"source", "target"}` host mounts (Multipass) |
+| `memory` | `"2G"` | RAM allocation (Multipass) |
+| `disk` | `"20G"` | Disk size (Multipass) |
+| `image` | `"24.04"` | Ubuntu version (Multipass) |
+| `instance_type` | `"t3.micro"` | EC2 instance type (AWS) |
+| `os` | `"ubuntu-24.04"` | AMI lookup key (AWS) |
+| `region` | `"us-east-1"` | AWS region |
+| `users` | (required) | List of `{"username", "github_username"}` for SSH key injection |
+| `vpc_id` | | Specific VPC to use (AWS; auto-discovered if empty) |
+| `subnet_id` | | Specific subnet to use (AWS; auto-discovered if empty) |
+| `mounts` | | List of `{"source", "target"}` host directory mounts (Multipass only) |
 
-### dns section (optional, AWS only)
+Some fields apply only to one provider. Multipass ignores `instance_type`, `os`, `region`, `vpc_id`, and `subnet_id`. AWS ignores `cpus`, `memory`, `disk`, `image`, and `mounts`. Both providers use `name` and `users`.
+
+### dns section reference (optional, AWS only)
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `hostname` | vm.name | Hostname portion of the DNS record |
-| `domain` | | Route53 hosted zone domain |
+| `hostname` | `vm.name` | Hostname portion of the FQDN |
+| `domain` | | Route53 hosted zone domain (e.g., `"example.com"`) |
 | `ttl` | 300 | DNS record TTL in seconds |
-| `zone_id` | | Route53 zone ID (auto-looked up from domain if omitted) |
-| `is_apex_domain` | false | Create an A record at the zone apex (bare domain) |
+| `zone_id` | | Route53 hosted zone ID; auto-looked up from domain if empty |
+| `is_apex_domain` | `false` | Also create an A record at the zone apex (bare domain) |
 | `cname_aliases` | | Additional CNAME records pointing at the hostname (e.g., `["www"]`) |
+
+The `zone_id` field is a hint. If you provide it, goloo skips the Route53 zone lookup and uses the ID directly. If you leave it empty, goloo finds the zone from the domain name.
+
+When `is_apex_domain` is `true` and `cname_aliases` includes `"www"`, creating a DNS-enabled server produces three records:
+
+| Record | Type | Value |
+|--------|------|-------|
+| `web.example.com` | A | instance public IP |
+| `example.com` | A | instance public IP |
+| `www.example.com` | CNAME | `web.example.com` |
+
+All records are cleaned up on delete.
 
 ### Supported AWS operating systems
 
