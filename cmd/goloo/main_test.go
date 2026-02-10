@@ -548,11 +548,14 @@ func TestDetectProviderLocalFlag(t *testing.T) {
 	}
 }
 
-func TestDetectProviderFromStackID(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{StackID: "arn:aws:cloudformation:us-east-1:123456789:stack/goloo-test/abc"}}
+func TestDetectProviderFromAWSState(t *testing.T) {
+	configuration := &config.Config{
+		VM:  &config.VMConfig{},
+		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:us-east-1:123456789:stack/goloo-test/abc"},
+	}
 	result := DetectProvider("", configuration)
 	if result != "aws" {
-		t.Errorf("expected 'aws' from stack_id, got %q", result)
+		t.Errorf("expected 'aws' from AWS state, got %q", result)
 	}
 }
 
@@ -575,8 +578,11 @@ func TestDetectProviderDefault(t *testing.T) {
 	}
 }
 
-func TestDetectProviderFlagOverridesStackID(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{StackID: "arn:aws:cloudformation:..."}}
+func TestDetectProviderFlagOverridesAWSState(t *testing.T) {
+	configuration := &config.Config{
+		VM:  &config.VMConfig{},
+		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:..."},
+	}
 	result := DetectProvider("local", configuration)
 	if result != "multipass" {
 		t.Errorf("expected 'multipass' (flag override), got %q", result)
@@ -594,14 +600,15 @@ func TestDetectProviderAWSFlagWithDNS(t *testing.T) {
 	}
 }
 
-func TestDetectProviderStackIDBeforeDNS(t *testing.T) {
+func TestDetectProviderAWSStateBeforeDNS(t *testing.T) {
 	configuration := &config.Config{
-		VM:  &config.VMConfig{StackID: "arn:aws:cloudformation:..."},
+		VM:  &config.VMConfig{},
 		DNS: &config.DNSConfig{Domain: "example.com"},
+		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:..."},
 	}
 	result := DetectProvider("", configuration)
 	if result != "aws" {
-		t.Errorf("expected 'aws' from stack_id, got %q", result)
+		t.Errorf("expected 'aws' from AWS state, got %q", result)
 	}
 }
 

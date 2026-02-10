@@ -229,23 +229,26 @@ func TestCreateWithDefaultVPC(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if configuration.VM.InstanceID != "i-0123456789abcdef0" {
-		t.Errorf("InstanceID = %q, want %q", configuration.VM.InstanceID, "i-0123456789abcdef0")
+	if configuration.AWS == nil {
+		t.Fatal("AWS state should be set after Create")
 	}
-	if configuration.VM.PublicIP != "54.1.2.3" {
-		t.Errorf("PublicIP = %q, want %q", configuration.VM.PublicIP, "54.1.2.3")
+	if configuration.AWS.InstanceID != "i-0123456789abcdef0" {
+		t.Errorf("InstanceID = %q, want %q", configuration.AWS.InstanceID, "i-0123456789abcdef0")
 	}
-	if configuration.VM.VpcID != "vpc-abc123" {
-		t.Errorf("VpcID = %q, want %q", configuration.VM.VpcID, "vpc-abc123")
+	if configuration.AWS.PublicIP != "54.1.2.3" {
+		t.Errorf("PublicIP = %q, want %q", configuration.AWS.PublicIP, "54.1.2.3")
 	}
-	if configuration.VM.SubnetID != "subnet-def456" {
-		t.Errorf("SubnetID = %q, want %q", configuration.VM.SubnetID, "subnet-def456")
+	if configuration.AWS.VpcID != "vpc-abc123" {
+		t.Errorf("VpcID = %q, want %q", configuration.AWS.VpcID, "vpc-abc123")
 	}
-	if configuration.VM.AMIID != "ami-0123456789abcdef0" {
-		t.Errorf("AMIID = %q, want %q", configuration.VM.AMIID, "ami-0123456789abcdef0")
+	if configuration.AWS.SubnetID != "subnet-def456" {
+		t.Errorf("SubnetID = %q, want %q", configuration.AWS.SubnetID, "subnet-def456")
 	}
-	if configuration.VM.StackName != "goloo-devbox" {
-		t.Errorf("StackName = %q, want %q", configuration.VM.StackName, "goloo-devbox")
+	if configuration.AWS.AMIID != "ami-0123456789abcdef0" {
+		t.Errorf("AMIID = %q, want %q", configuration.AWS.AMIID, "ami-0123456789abcdef0")
+	}
+	if configuration.AWS.StackName != "goloo-devbox" {
+		t.Errorf("StackName = %q, want %q", configuration.AWS.StackName, "goloo-devbox")
 	}
 	if len(cloudFormation.createdStacks) != 1 || cloudFormation.createdStacks[0] != "goloo-devbox" {
 		t.Errorf("Expected stack 'goloo-devbox' to be created, got %v", cloudFormation.createdStacks)
@@ -268,8 +271,8 @@ func TestCreateDefaultsToUbuntu2404(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if configuration.VM.AMIID != "ami-0123456789abcdef0" {
-		t.Errorf("Should default to ubuntu-24.04 AMI, got %q", configuration.VM.AMIID)
+	if configuration.AWS.AMIID != "ami-0123456789abcdef0" {
+		t.Errorf("Should default to ubuntu-24.04 AMI, got %q", configuration.AWS.AMIID)
 	}
 }
 
@@ -294,11 +297,11 @@ func TestCreateWithDNS(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if configuration.DNS.ZoneID != "Z1234567890" {
-		t.Errorf("ZoneID = %q, want %q", configuration.DNS.ZoneID, "Z1234567890")
+	if configuration.AWS.ZoneID != "Z1234567890" {
+		t.Errorf("ZoneID = %q, want %q", configuration.AWS.ZoneID, "Z1234567890")
 	}
-	if configuration.DNS.FQDN != "devbox.example.com" {
-		t.Errorf("FQDN = %q, want %q", configuration.DNS.FQDN, "devbox.example.com")
+	if configuration.AWS.FQDN != "devbox.example.com" {
+		t.Errorf("FQDN = %q, want %q", configuration.AWS.FQDN, "devbox.example.com")
 	}
 	if len(route53.upsertedRecords) != 1 {
 		t.Fatalf("Expected 1 upserted record, got %d", len(route53.upsertedRecords))
@@ -306,11 +309,11 @@ func TestCreateWithDNS(t *testing.T) {
 	if route53.upsertedRecords[0] != "devbox.example.com->54.1.2.3" {
 		t.Errorf("Upserted record = %q, want %q", route53.upsertedRecords[0], "devbox.example.com->54.1.2.3")
 	}
-	if len(configuration.DNS.DNSRecords) != 1 {
-		t.Fatalf("Expected 1 DNS record in config, got %d", len(configuration.DNS.DNSRecords))
+	if len(configuration.AWS.DNSRecords) != 1 {
+		t.Fatalf("Expected 1 DNS record in config, got %d", len(configuration.AWS.DNSRecords))
 	}
-	if configuration.DNS.DNSRecords[0].Type != "A" {
-		t.Errorf("DNS record type = %q, want %q", configuration.DNS.DNSRecords[0].Type, "A")
+	if configuration.AWS.DNSRecords[0].Type != "A" {
+		t.Errorf("DNS record type = %q, want %q", configuration.AWS.DNSRecords[0].Type, "A")
 	}
 }
 
@@ -338,19 +341,19 @@ func TestCreateCreatesNetworkWhenNoDefaultVPC(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if !configuration.VM.CreatedVPC {
+	if !configuration.AWS.CreatedVPC {
 		t.Error("CreatedVPC should be true when VPC was created")
 	}
-	if configuration.VM.VpcID != "vpc-new123" {
-		t.Errorf("VpcID = %q, want %q", configuration.VM.VpcID, "vpc-new123")
+	if configuration.AWS.VpcID != "vpc-new123" {
+		t.Errorf("VpcID = %q, want %q", configuration.AWS.VpcID, "vpc-new123")
 	}
-	if configuration.VM.InternetGatewayID != "igw-789" {
-		t.Errorf("InternetGatewayID = %q, want %q", configuration.VM.InternetGatewayID, "igw-789")
+	if configuration.AWS.InternetGatewayID != "igw-789" {
+		t.Errorf("InternetGatewayID = %q, want %q", configuration.AWS.InternetGatewayID, "igw-789")
 	}
 }
 
 func TestCreateUsesConfigVPCIfProvided(t *testing.T) {
-	provider, _, ec2, _, _ := newFakeProvider()
+	provider, _, _, _, _ := newFakeProvider()
 	cloudInitPath := createCloudInitFile(t)
 
 	configuration := &config.Config{
@@ -367,11 +370,11 @@ func TestCreateUsesConfigVPCIfProvided(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if configuration.VM.VpcID != "vpc-explicit" {
-		t.Errorf("Should use explicit VPC, got %q", configuration.VM.VpcID)
+	if configuration.AWS.VpcID != "vpc-explicit" {
+		t.Errorf("Should use explicit VPC, got %q", configuration.AWS.VpcID)
 	}
-	if ec2.defaultVPCID == "" {
-		t.Log("FindDefaultVPC should not have been needed")
+	if configuration.AWS.SubnetID != "subnet-explicit" {
+		t.Errorf("Should use explicit Subnet, got %q", configuration.AWS.SubnetID)
 	}
 }
 
@@ -432,15 +435,15 @@ func TestDeleteCleansUpResources(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:      "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			StackName: "goloo-devbox",
 			PublicIP:  "54.1.2.3",
 			VpcID:     "vpc-abc123",
 			SubnetID:  "subnet-def456",
-		},
-		DNS: &config.DNSConfig{
-			ZoneID: "Z1234567890",
-			FQDN:   "devbox.example.com",
+			ZoneID:    "Z1234567890",
+			FQDN:      "devbox.example.com",
 			DNSRecords: []config.DNSRecord{
 				{Name: "devbox.example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
 			},
@@ -458,23 +461,8 @@ func TestDeleteCleansUpResources(t *testing.T) {
 	if len(cloudFormation.deletedStacks) != 1 || cloudFormation.deletedStacks[0] != "goloo-devbox" {
 		t.Errorf("Expected stack deletion, got %v", cloudFormation.deletedStacks)
 	}
-	if configuration.VM.InstanceID != "" {
-		t.Error("InstanceID should be cleared after delete")
-	}
-	if configuration.VM.PublicIP != "" {
-		t.Error("PublicIP should be cleared after delete")
-	}
-	if configuration.VM.StackName != "" {
-		t.Error("StackName should be cleared after delete")
-	}
-	if configuration.VM.VpcID != "" {
-		t.Error("VpcID should be cleared after delete")
-	}
-	if configuration.VM.SubnetID != "" {
-		t.Error("SubnetID should be cleared after delete")
-	}
-	if configuration.DNS.ZoneID != "" {
-		t.Error("DNS ZoneID should be cleared after delete")
+	if configuration.AWS != nil {
+		t.Error("AWS state should be nil after delete")
 	}
 }
 
@@ -484,14 +472,14 @@ func TestDeleteContinuesWhenDNSDeletionFails(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:      "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			StackName: "goloo-devbox",
 			PublicIP:  "54.1.2.3",
 			VpcID:     "vpc-abc123",
 			SubnetID:  "subnet-def456",
-		},
-		DNS: &config.DNSConfig{
-			ZoneID: "Z1234567890",
+			ZoneID:    "Z1234567890",
 			DNSRecords: []config.DNSRecord{
 				{Name: "devbox.example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
 			},
@@ -506,8 +494,8 @@ func TestDeleteContinuesWhenDNSDeletionFails(t *testing.T) {
 	if len(cloudFormation.deletedStacks) != 1 {
 		t.Error("CloudFormation stack should still be deleted after DNS failure")
 	}
-	if configuration.VM.StackName != "" {
-		t.Error("Runtime fields should still be cleared after DNS failure")
+	if configuration.AWS != nil {
+		t.Error("AWS state should be nil after delete")
 	}
 }
 
@@ -516,7 +504,9 @@ func TestDeleteCleansUpCreatedNetwork(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:              "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			StackName:         "goloo-devbox",
 			CreatedVPC:        true,
 			VpcID:             "vpc-created",
@@ -537,8 +527,8 @@ func TestDeleteCleansUpCreatedNetwork(t *testing.T) {
 	if ec2.deletedNetworks[0].VpcID != "vpc-created" {
 		t.Errorf("Deleted network VpcID = %q, want %q", ec2.deletedNetworks[0].VpcID, "vpc-created")
 	}
-	if configuration.VM.CreatedVPC != false {
-		t.Error("CreatedVPC should be false after delete")
+	if configuration.AWS != nil {
+		t.Error("AWS state should be nil after delete")
 	}
 }
 
@@ -547,9 +537,10 @@ func TestDeleteSkipsNetworkCleanupWhenNotCreated(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:       "devbox",
-			StackName:  "goloo-devbox",
-			CreatedVPC: false,
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
+			StackName: "goloo-devbox",
 		},
 	}
 
@@ -568,7 +559,9 @@ func TestStatusReturnsInstanceInfo(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:       "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			InstanceID: "i-0123456789abcdef0",
 		},
 	}
@@ -610,7 +603,9 @@ func TestStopCallsEC2(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:       "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			InstanceID: "i-abc123",
 		},
 	}
@@ -630,7 +625,9 @@ func TestStartCallsEC2(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:       "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			InstanceID: "i-abc123",
 		},
 	}
@@ -692,13 +689,15 @@ func TestSwapDNSUpdatesRecord(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:     "devbox",
-			PublicIP: "54.9.8.7",
+			Name: "devbox",
 		},
 		DNS: &config.DNSConfig{
 			Hostname: "devbox",
 			Domain:   "example.com",
 			TTL:      60,
+		},
+		AWS: &config.AWSState{
+			PublicIP: "54.9.8.7",
 		},
 	}
 
@@ -713,8 +712,8 @@ func TestSwapDNSUpdatesRecord(t *testing.T) {
 	if route53.upsertedRecords[0] != "devbox.example.com->54.9.8.7" {
 		t.Errorf("Upserted record = %q, want %q", route53.upsertedRecords[0], "devbox.example.com->54.9.8.7")
 	}
-	if configuration.DNS.FQDN != "devbox.example.com" {
-		t.Errorf("FQDN = %q, want %q", configuration.DNS.FQDN, "devbox.example.com")
+	if configuration.AWS.FQDN != "devbox.example.com" {
+		t.Errorf("FQDN = %q, want %q", configuration.AWS.FQDN, "devbox.example.com")
 	}
 }
 
@@ -723,7 +722,9 @@ func TestSwapDNSFailsWithoutDNSConfig(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:     "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			PublicIP: "54.1.2.3",
 		},
 	}
@@ -746,7 +747,7 @@ func TestSwapDNSFailsWithoutPublicIP(t *testing.T) {
 
 	err := provider.SwapDNS(context.Background(), configuration)
 	if err == nil {
-		t.Fatal("SwapDNS() should return error when no public IP")
+		t.Fatal("SwapDNS() should return error when no AWS state")
 	}
 }
 
@@ -755,14 +756,16 @@ func TestSwapDNSUsesExistingZoneID(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:     "devbox",
-			PublicIP: "54.1.2.3",
+			Name: "devbox",
 		},
 		DNS: &config.DNSConfig{
 			Hostname: "devbox",
 			Domain:   "example.com",
 			ZoneID:   "Z-EXISTING",
 			TTL:      60,
+		},
+		AWS: &config.AWSState{
+			PublicIP: "54.1.2.3",
 		},
 	}
 
@@ -771,8 +774,8 @@ func TestSwapDNSUsesExistingZoneID(t *testing.T) {
 		t.Fatalf("SwapDNS() returned error: %v", err)
 	}
 
-	if configuration.DNS.ZoneID != "Z-EXISTING" {
-		t.Errorf("Should preserve existing ZoneID, got %q", configuration.DNS.ZoneID)
+	if configuration.AWS.ZoneID != "Z-EXISTING" {
+		t.Errorf("Should use existing ZoneID, got %q", configuration.AWS.ZoneID)
 	}
 	if len(route53.upsertedRecords) != 1 {
 		t.Error("Should still upsert the record")
@@ -801,8 +804,8 @@ func TestCreateDNSReusesExistingZoneID(t *testing.T) {
 		t.Fatalf("Create() returned error: %v", err)
 	}
 
-	if configuration.DNS.ZoneID != "Z-PRECONFIGURED" {
-		t.Errorf("Should reuse existing ZoneID, got %q", configuration.DNS.ZoneID)
+	if configuration.AWS.ZoneID != "Z-PRECONFIGURED" {
+		t.Errorf("Should reuse existing ZoneID, got %q", configuration.AWS.ZoneID)
 	}
 	if len(route53.upsertedRecords) != 1 {
 		t.Fatalf("Expected 1 upserted record, got %d", len(route53.upsertedRecords))
@@ -840,11 +843,11 @@ func TestCreateDNSWithApexDomain(t *testing.T) {
 	if route53.upsertedRecords[1] != "example.com->54.1.2.3" {
 		t.Errorf("Second record = %q, want apex A record", route53.upsertedRecords[1])
 	}
-	if len(configuration.DNS.DNSRecords) != 2 {
-		t.Fatalf("Expected 2 DNS records in config, got %d", len(configuration.DNS.DNSRecords))
+	if len(configuration.AWS.DNSRecords) != 2 {
+		t.Fatalf("Expected 2 DNS records in config, got %d", len(configuration.AWS.DNSRecords))
 	}
-	if configuration.DNS.DNSRecords[1].Name != "example.com" || configuration.DNS.DNSRecords[1].Type != "A" {
-		t.Errorf("Apex record = %+v, want A record for example.com", configuration.DNS.DNSRecords[1])
+	if configuration.AWS.DNSRecords[1].Name != "example.com" || configuration.AWS.DNSRecords[1].Type != "A" {
+		t.Errorf("Apex record = %+v, want A record for example.com", configuration.AWS.DNSRecords[1])
 	}
 }
 
@@ -882,11 +885,11 @@ func TestCreateDNSWithCNAMEAliases(t *testing.T) {
 	if route53.upsertedCNAMEs[1] != "api.example.com->devbox.example.com" {
 		t.Errorf("Second CNAME = %q, want api->devbox", route53.upsertedCNAMEs[1])
 	}
-	if len(configuration.DNS.DNSRecords) != 3 {
-		t.Fatalf("Expected 3 DNS records in config, got %d", len(configuration.DNS.DNSRecords))
+	if len(configuration.AWS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records in config, got %d", len(configuration.AWS.DNSRecords))
 	}
-	if configuration.DNS.DNSRecords[1].Type != "CNAME" {
-		t.Errorf("Second record type = %q, want CNAME", configuration.DNS.DNSRecords[1].Type)
+	if configuration.AWS.DNSRecords[1].Type != "CNAME" {
+		t.Errorf("Second record type = %q, want CNAME", configuration.AWS.DNSRecords[1].Type)
 	}
 }
 
@@ -919,8 +922,8 @@ func TestCreateDNSWithApexAndCNAME(t *testing.T) {
 	if len(route53.upsertedCNAMEs) != 1 {
 		t.Fatalf("Expected 1 CNAME, got %d", len(route53.upsertedCNAMEs))
 	}
-	if len(configuration.DNS.DNSRecords) != 3 {
-		t.Fatalf("Expected 3 DNS records total, got %d", len(configuration.DNS.DNSRecords))
+	if len(configuration.AWS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records total, got %d", len(configuration.AWS.DNSRecords))
 	}
 }
 
@@ -929,13 +932,13 @@ func TestDeleteCleansUpCNAMERecords(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:      "devbox",
+			Name: "devbox",
+		},
+		AWS: &config.AWSState{
 			StackName: "goloo-devbox",
 			PublicIP:  "54.1.2.3",
-		},
-		DNS: &config.DNSConfig{
-			ZoneID: "Z1234567890",
-			FQDN:   "devbox.example.com",
+			ZoneID:    "Z1234567890",
+			FQDN:      "devbox.example.com",
 			DNSRecords: []config.DNSRecord{
 				{Name: "devbox.example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
 				{Name: "example.com", Type: "A", Value: "54.1.2.3", TTL: 300},
@@ -965,8 +968,7 @@ func TestSwapDNSWithApexAndCNAME(t *testing.T) {
 
 	configuration := &config.Config{
 		VM: &config.VMConfig{
-			Name:     "devbox",
-			PublicIP: "54.9.8.7",
+			Name: "devbox",
 		},
 		DNS: &config.DNSConfig{
 			Hostname:     "devbox",
@@ -974,6 +976,9 @@ func TestSwapDNSWithApexAndCNAME(t *testing.T) {
 			TTL:          60,
 			IsApexDomain: true,
 			CNAMEAliases: []string{"www"},
+		},
+		AWS: &config.AWSState{
+			PublicIP: "54.9.8.7",
 		},
 	}
 
@@ -991,8 +996,38 @@ func TestSwapDNSWithApexAndCNAME(t *testing.T) {
 	if route53.upsertedCNAMEs[0] != "www.example.com->devbox.example.com" {
 		t.Errorf("CNAME = %q, want www->devbox", route53.upsertedCNAMEs[0])
 	}
-	if len(configuration.DNS.DNSRecords) != 3 {
-		t.Fatalf("Expected 3 DNS records, got %d", len(configuration.DNS.DNSRecords))
+	if len(configuration.AWS.DNSRecords) != 3 {
+		t.Fatalf("Expected 3 DNS records, got %d", len(configuration.AWS.DNSRecords))
+	}
+}
+
+func TestSSHUsernameForUbuntu(t *testing.T) {
+	if sshUsername("ubuntu-24.04") != "ubuntu" {
+		t.Errorf("SSH username for ubuntu-24.04 = %q, want %q", sshUsername("ubuntu-24.04"), "ubuntu")
+	}
+	if sshUsername("ubuntu-22.04") != "ubuntu" {
+		t.Errorf("SSH username for ubuntu-22.04 = %q, want %q", sshUsername("ubuntu-22.04"), "ubuntu")
+	}
+}
+
+func TestSSHUsernameForAmazonLinux(t *testing.T) {
+	if sshUsername("amazon-linux-2023") != "ec2-user" {
+		t.Errorf("SSH username for amazon-linux-2023 = %q, want %q", sshUsername("amazon-linux-2023"), "ec2-user")
+	}
+	if sshUsername("amazon-linux-2") != "ec2-user" {
+		t.Errorf("SSH username for amazon-linux-2 = %q, want %q", sshUsername("amazon-linux-2"), "ec2-user")
+	}
+}
+
+func TestSSHUsernameForDebian(t *testing.T) {
+	if sshUsername("debian-12") != "admin" {
+		t.Errorf("SSH username for debian-12 = %q, want %q", sshUsername("debian-12"), "admin")
+	}
+}
+
+func TestSSHUsernameDefaultsToUbuntu(t *testing.T) {
+	if sshUsername("") != "ubuntu" {
+		t.Errorf("SSH username for empty OS = %q, want %q", sshUsername(""), "ubuntu")
 	}
 }
 

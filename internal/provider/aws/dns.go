@@ -12,6 +12,9 @@ func BuildFQDN(hostname string, domain string) string {
 }
 
 func (p *Provider) resolveZoneID(context context.Context, configuration *config.Config) (string, error) {
+	if configuration.AWS != nil && configuration.AWS.ZoneID != "" {
+		return configuration.AWS.ZoneID, nil
+	}
 	if configuration.DNS.ZoneID != "" {
 		return configuration.DNS.ZoneID, nil
 	}
@@ -19,7 +22,9 @@ func (p *Provider) resolveZoneID(context context.Context, configuration *config.
 	if err != nil {
 		return "", fmt.Errorf("failed to find hosted zone for %s: %w", configuration.DNS.Domain, err)
 	}
-	configuration.DNS.ZoneID = zoneID
+	if configuration.AWS != nil {
+		configuration.AWS.ZoneID = zoneID
+	}
 	return zoneID, nil
 }
 
@@ -43,28 +48,29 @@ func (p *Provider) createDNSRecords(context context.Context, configuration *conf
 	}
 
 	fqdn := BuildFQDN(hostname, configuration.DNS.Domain)
-	configuration.DNS.FQDN = fqdn
+	configuration.AWS.FQDN = fqdn
+	configuration.AWS.ZoneID = zoneID
 
 	ttl := configuration.DNS.TTL
 	if ttl == 0 {
 		ttl = 300
 	}
 
-	if err := p.Route53.UpsertARecord(context, zoneID, fqdn, configuration.VM.PublicIP, ttl); err != nil {
+	if err := p.Route53.UpsertARecord(context, zoneID, fqdn, configuration.AWS.PublicIP, ttl); err != nil {
 		return fmt.Errorf("failed to create A record for %s: %w", fqdn, err)
 	}
 
 	records := []config.DNSRecord{
-		{Name: fqdn, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl},
+		{Name: fqdn, Type: "A", Value: configuration.AWS.PublicIP, TTL: ttl},
 	}
 
 	if configuration.DNS.IsApexDomain {
 		apexName := configuration.DNS.Domain
-		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.VM.PublicIP, ttl); err != nil {
+		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.AWS.PublicIP, ttl); err != nil {
 			return fmt.Errorf("failed to create apex A record for %s: %w", apexName, err)
 		}
 		records = append(records, config.DNSRecord{
-			Name: apexName, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl,
+			Name: apexName, Type: "A", Value: configuration.AWS.PublicIP, TTL: ttl,
 		})
 	}
 
@@ -78,7 +84,7 @@ func (p *Provider) createDNSRecords(context context.Context, configuration *conf
 		})
 	}
 
-	configuration.DNS.DNSRecords = records
+	configuration.AWS.DNSRecords = records
 	return nil
 }
 
@@ -87,14 +93,14 @@ func (p *Provider) deleteDNSRecords(context context.Context, configuration *conf
 		return nil
 	}
 
-	for _, record := range configuration.DNS.DNSRecords {
+	for _, record := range configuration.AWS.DNSRecords {
 		switch record.Type {
 		case "A":
-			if err := p.Route53.DeleteARecord(context, configuration.DNS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
+			if err := p.Route53.DeleteARecord(context, configuration.AWS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
 				return fmt.Errorf("failed to delete A record %s: %w", record.Name, err)
 			}
 		case "CNAME":
-			if err := p.Route53.DeleteCNAMERecord(context, configuration.DNS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
+			if err := p.Route53.DeleteCNAMERecord(context, configuration.AWS.ZoneID, record.Name, record.Value, record.TTL); err != nil {
 				return fmt.Errorf("failed to delete CNAME record %s: %w", record.Name, err)
 			}
 		}
@@ -113,7 +119,7 @@ func (p *Provider) SwapDNS(context context.Context, configuration *config.Config
 	if configuration.DNS == nil || configuration.DNS.Domain == "" {
 		return fmt.Errorf("DNS configuration required for dns swap: add 'dns' section to config")
 	}
-	if configuration.VM.PublicIP == "" {
+	if configuration.AWS == nil || configuration.AWS.PublicIP == "" {
 		return fmt.Errorf("no public IP: VM must be running for dns swap")
 	}
 
@@ -130,21 +136,21 @@ func (p *Provider) SwapDNS(context context.Context, configuration *config.Config
 		ttl = 300
 	}
 
-	if err := p.Route53.UpsertARecord(context, zoneID, fqdn, configuration.VM.PublicIP, ttl); err != nil {
+	if err := p.Route53.UpsertARecord(context, zoneID, fqdn, configuration.AWS.PublicIP, ttl); err != nil {
 		return fmt.Errorf("failed to swap DNS record for %s: %w", fqdn, err)
 	}
 
 	records := []config.DNSRecord{
-		{Name: fqdn, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl},
+		{Name: fqdn, Type: "A", Value: configuration.AWS.PublicIP, TTL: ttl},
 	}
 
 	if configuration.DNS.IsApexDomain {
 		apexName := configuration.DNS.Domain
-		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.VM.PublicIP, ttl); err != nil {
+		if err := p.Route53.UpsertARecord(context, zoneID, apexName, configuration.AWS.PublicIP, ttl); err != nil {
 			return fmt.Errorf("failed to swap apex A record for %s: %w", apexName, err)
 		}
 		records = append(records, config.DNSRecord{
-			Name: apexName, Type: "A", Value: configuration.VM.PublicIP, TTL: ttl,
+			Name: apexName, Type: "A", Value: configuration.AWS.PublicIP, TTL: ttl,
 		})
 	}
 
@@ -158,7 +164,8 @@ func (p *Provider) SwapDNS(context context.Context, configuration *config.Config
 		})
 	}
 
-	configuration.DNS.FQDN = fqdn
-	configuration.DNS.DNSRecords = records
+	configuration.AWS.FQDN = fqdn
+	configuration.AWS.DNSRecords = records
+	configuration.AWS.ZoneID = zoneID
 	return nil
 }

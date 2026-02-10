@@ -334,7 +334,7 @@ func TestValidateIsApexDomainRequiresDomain(t *testing.T) {
 
 func TestValidateDNSWithDomainAndAliases(t *testing.T) {
 	configuration := &Config{
-		VM: &VMConfig{Name: "devbox"},
+		VM: &VMConfig{Name: "devbox", Users: []User{{Username: "ubuntu", GitHubUsername: "test"}}},
 		DNS: &DNSConfig{
 			Domain:       "example.com",
 			CNAMEAliases: []string{"www"},
@@ -352,8 +352,9 @@ func TestValidateNoUsers(t *testing.T) {
 			Name: "devbox",
 		},
 	}
-	if err := Validate(configuration); err != nil {
-		t.Errorf("Validate() should allow config with no users: %v", err)
+	err := Validate(configuration)
+	if err == nil {
+		t.Fatal("Validate() should return error when no users defined")
 	}
 }
 
@@ -407,8 +408,10 @@ func TestSaveAndReload(t *testing.T) {
 func TestSaveCreatesValidJSON(t *testing.T) {
 	configuration := &Config{
 		VM: &VMConfig{
-			Name:     "devbox",
-			PublicIP: "10.0.0.5",
+			Name: "devbox",
+		},
+		Local: &LocalState{
+			IP: "10.0.0.5",
 		},
 	}
 
@@ -432,7 +435,7 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	directory := t.TempDir()
 	vmDirectory := filepath.Join(directory, "devbox")
 	os.MkdirAll(vmDirectory, 0755)
-	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte(`{"vm": {"name": "devbox"}}`), 0644)
+	os.WriteFile(filepath.Join(vmDirectory, "config.json"), []byte(`{"vm": {"name": "devbox", "users": [{"username": "ubuntu", "github_username": "test"}]}}`), 0644)
 
 	configuration, _, err := Load(directory, "devbox")
 	if err != nil {

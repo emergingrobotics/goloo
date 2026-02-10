@@ -87,6 +87,9 @@ func Validate(configuration *Config) error {
 	if configuration.VM.Name == "" {
 		return fmt.Errorf("config missing required field: vm.name")
 	}
+	if len(configuration.VM.Users) == 0 {
+		return fmt.Errorf("config missing required field: vm.users (at least one user required)")
+	}
 
 	seen := make(map[string]bool)
 	for _, user := range configuration.VM.Users {

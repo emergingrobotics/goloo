@@ -1,0 +1,31 @@
+{
+  "vm": {
+    "name": "aws-web-server",
+    "users": [
+      {
+        "username": "gherlein",
+        "github_username": "gherlein"
+      },
+      {
+        "username": "lherlein",
+        "github_username": "lherlein"
+      }
+    ],
+    "cpus": 2,
+    "memory": "2G",
+    "disk": "20G",
+    "image": "24.04",
+    "instance_type": "t3.small",
+    "os": "ubuntu-24.04",
+    "region": "us-east-1",
+    "public_ip": "192.168.64.6"
+  },
+  "dns": {
+    "hostname": "web2",
+    "domain": "herlein.com",
+    "ttl": 300,
+    "cname_aliases": [
+      "www2"
+    ]
+  }
+}

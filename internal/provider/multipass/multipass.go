@@ -31,6 +31,8 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 		return fmt.Errorf("multipass launch failed: %s: %w", string(output), err)
 	}
 
+	configuration.Local = &config.LocalState{}
+
 	p.verboseLog("getting VM info for %q", configuration.VM.Name)
 	info, err := p.getInfo(context, configuration.VM.Name)
 	if err != nil {
@@ -38,7 +40,7 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 	}
 
 	if len(info.IPv4) > 0 {
-		configuration.VM.PublicIP = info.IPv4[0]
+		configuration.Local.IP = info.IPv4[0]
 		p.verboseLog("VM IP: %s", info.IPv4[0])
 	}
 
@@ -59,7 +61,7 @@ func (p *Provider) Delete(context context.Context, configuration *config.Config)
 	if _, err := p.runCommand(context, "purge"); err != nil {
 		return fmt.Errorf("failed to purge deleted VMs: %w", err)
 	}
-	configuration.VM.PublicIP = ""
+	configuration.Local = nil
 	return nil
 }
 

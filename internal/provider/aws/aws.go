@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/emergingrobotics/goloo/internal/config"
 	"github.com/emergingrobotics/goloo/internal/provider"
@@ -77,6 +78,8 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 		return err
 	}
 
+	configuration.AWS = &config.AWSState{}
+
 	cloudInitContent, err := os.ReadFile(cloudInitPath)
 	if err != nil {
 		return fmt.Errorf("failed to read cloud-init file %s: %w", cloudInitPath, err)
@@ -91,14 +94,14 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 	if err != nil {
 		return fmt.Errorf("AMI lookup failed: %w", err)
 	}
-	configuration.VM.AMIID = amiID
+	configuration.AWS.AMIID = amiID
 
 	vpcID, subnetID, err := p.discoverOrCreateNetwork(context, configuration)
 	if err != nil {
 		return fmt.Errorf("network setup failed: %w", err)
 	}
-	configuration.VM.VpcID = vpcID
-	configuration.VM.SubnetID = subnetID
+	configuration.AWS.VpcID = vpcID
+	configuration.AWS.SubnetID = subnetID
 
 	template := GenerateTemplate(userData)
 	stackName := BuildStackName(configuration.VM.Name)
@@ -114,8 +117,8 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 	if err != nil {
 		return fmt.Errorf("CloudFormation stack creation failed: %w", err)
 	}
-	configuration.VM.StackID = stackID
-	configuration.VM.StackName = stackName
+	configuration.AWS.StackID = stackID
+	configuration.AWS.StackName = stackName
 
 	if err := p.CloudFormation.WaitForCreateComplete(context, stackName); err != nil {
 		return fmt.Errorf("CloudFormation stack failed to create: %w", err)
@@ -125,9 +128,9 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 	if err != nil {
 		return fmt.Errorf("failed to get stack outputs: %w", err)
 	}
-	configuration.VM.InstanceID = outputs.InstanceID
-	configuration.VM.PublicIP = outputs.PublicIP
-	configuration.VM.SecurityGroup = outputs.SecurityGroupID
+	configuration.AWS.InstanceID = outputs.InstanceID
+	configuration.AWS.PublicIP = outputs.PublicIP
+	configuration.AWS.SecurityGroup = outputs.SecurityGroupID
 
 	if configuration.DNS != nil && configuration.DNS.Domain != "" {
 		if err := p.createDNSRecords(context, configuration); err != nil {
@@ -143,53 +146,39 @@ func (p *Provider) Delete(context context.Context, configuration *config.Config)
 		return err
 	}
 
-	if configuration.DNS != nil && configuration.DNS.ZoneID != "" && configuration.VM.PublicIP != "" {
+	if configuration.AWS == nil {
+		return fmt.Errorf("no AWS state: VM may not have been created with AWS")
+	}
+
+	if configuration.AWS.ZoneID != "" && configuration.AWS.PublicIP != "" {
 		if err := p.deleteDNSRecords(context, configuration); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: DNS record deletion failed (continuing with delete): %v\n", err)
 		}
 	}
 
-	if configuration.VM.StackName != "" {
-		if err := p.CloudFormation.DeleteStack(context, configuration.VM.StackName); err != nil {
+	if configuration.AWS.StackName != "" {
+		if err := p.CloudFormation.DeleteStack(context, configuration.AWS.StackName); err != nil {
 			return fmt.Errorf("CloudFormation stack deletion failed: %w", err)
 		}
-		if err := p.CloudFormation.WaitForDeleteComplete(context, configuration.VM.StackName); err != nil {
+		if err := p.CloudFormation.WaitForDeleteComplete(context, configuration.AWS.StackName); err != nil {
 			return fmt.Errorf("CloudFormation stack failed to delete: %w", err)
 		}
 	}
 
-	if configuration.VM.CreatedVPC {
+	if configuration.AWS.CreatedVPC {
 		networkStack := &NetworkStack{
-			VpcID:                 configuration.VM.VpcID,
-			SubnetID:              configuration.VM.SubnetID,
-			InternetGatewayID:     configuration.VM.InternetGatewayID,
-			RouteTableID:          configuration.VM.RouteTableID,
-			RouteTableAssociation: configuration.VM.RouteTableAssociation,
+			VpcID:                 configuration.AWS.VpcID,
+			SubnetID:              configuration.AWS.SubnetID,
+			InternetGatewayID:     configuration.AWS.InternetGatewayID,
+			RouteTableID:          configuration.AWS.RouteTableID,
+			RouteTableAssociation: configuration.AWS.RouteTableAssociation,
 		}
 		if err := p.EC2.DeleteNetworkStack(context, networkStack); err != nil {
 			return fmt.Errorf("network cleanup failed: %w", err)
 		}
 	}
 
-	configuration.VM.InstanceID = ""
-	configuration.VM.PublicIP = ""
-	configuration.VM.StackID = ""
-	configuration.VM.StackName = ""
-	configuration.VM.SecurityGroup = ""
-	configuration.VM.AMIID = ""
-	configuration.VM.VpcID = ""
-	configuration.VM.SubnetID = ""
-	configuration.VM.CreatedVPC = false
-	configuration.VM.CreatedSubnet = false
-	configuration.VM.InternetGatewayID = ""
-	configuration.VM.RouteTableID = ""
-	configuration.VM.RouteTableAssociation = ""
-
-	if configuration.DNS != nil {
-		configuration.DNS.ZoneID = ""
-		configuration.DNS.FQDN = ""
-		configuration.DNS.DNSRecords = nil
-	}
+	configuration.AWS = nil
 
 	return nil
 }
@@ -198,13 +187,13 @@ func (p *Provider) Status(context context.Context, configuration *config.Config)
 	if err := p.validateClients(); err != nil {
 		return nil, err
 	}
-	if configuration.VM.InstanceID == "" {
+	if configuration.AWS == nil || configuration.AWS.InstanceID == "" {
 		return nil, fmt.Errorf("no instance ID: VM may not have been created with AWS")
 	}
 
-	state, publicIP, err := p.EC2.DescribeInstance(context, configuration.VM.InstanceID)
+	state, publicIP, err := p.EC2.DescribeInstance(context, configuration.AWS.InstanceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to describe instance %s: %w", configuration.VM.InstanceID, err)
+		return nil, fmt.Errorf("failed to describe instance %s: %w", configuration.AWS.InstanceID, err)
 	}
 
 	return &provider.VMStatus{
@@ -220,14 +209,11 @@ func (p *Provider) List(_ context.Context) ([]provider.VMStatus, error) {
 }
 
 func (p *Provider) SSH(_ context.Context, configuration *config.Config) error {
-	if configuration.VM.PublicIP == "" {
+	if configuration.AWS == nil || configuration.AWS.PublicIP == "" {
 		return fmt.Errorf("no public IP: run 'goloo status %s' to check VM state", configuration.VM.Name)
 	}
-	username := "ubuntu"
-	if len(configuration.VM.Users) > 0 {
-		username = configuration.VM.Users[0].Username
-	}
-	command := exec.Command("ssh", username+"@"+configuration.VM.PublicIP)
+	username := sshUsername(configuration.VM.OS)
+	command := exec.Command("ssh", username+"@"+configuration.AWS.PublicIP)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
@@ -238,20 +224,20 @@ func (p *Provider) Stop(context context.Context, configuration *config.Config) e
 	if err := p.validateClients(); err != nil {
 		return err
 	}
-	if configuration.VM.InstanceID == "" {
+	if configuration.AWS == nil || configuration.AWS.InstanceID == "" {
 		return fmt.Errorf("no instance ID: VM may not have been created with AWS")
 	}
-	return p.EC2.StopInstance(context, configuration.VM.InstanceID)
+	return p.EC2.StopInstance(context, configuration.AWS.InstanceID)
 }
 
 func (p *Provider) Start(context context.Context, configuration *config.Config) error {
 	if err := p.validateClients(); err != nil {
 		return err
 	}
-	if configuration.VM.InstanceID == "" {
+	if configuration.AWS == nil || configuration.AWS.InstanceID == "" {
 		return fmt.Errorf("no instance ID: VM may not have been created with AWS")
 	}
-	return p.EC2.StartInstance(context, configuration.VM.InstanceID)
+	return p.EC2.StartInstance(context, configuration.AWS.InstanceID)
 }
 
 func (p *Provider) discoverOrCreateNetwork(context context.Context, configuration *config.Config) (string, string, error) {
@@ -265,11 +251,11 @@ func (p *Provider) discoverOrCreateNetwork(context context.Context, configuratio
 		if createErr != nil {
 			return "", "", fmt.Errorf("no VPC found and failed to create one: %w", createErr)
 		}
-		configuration.VM.CreatedVPC = true
-		configuration.VM.CreatedSubnet = true
-		configuration.VM.InternetGatewayID = networkStack.InternetGatewayID
-		configuration.VM.RouteTableID = networkStack.RouteTableID
-		configuration.VM.RouteTableAssociation = networkStack.RouteTableAssociation
+		configuration.AWS.CreatedVPC = true
+		configuration.AWS.CreatedSubnet = true
+		configuration.AWS.InternetGatewayID = networkStack.InternetGatewayID
+		configuration.AWS.RouteTableID = networkStack.RouteTableID
+		configuration.AWS.RouteTableAssociation = networkStack.RouteTableAssociation
 		return networkStack.VpcID, networkStack.SubnetID, nil
 	}
 
@@ -279,6 +265,17 @@ func (p *Provider) discoverOrCreateNetwork(context context.Context, configuratio
 	}
 
 	return vpcID, subnetID, nil
+}
+
+func sshUsername(operatingSystem string) string {
+	switch {
+	case strings.HasPrefix(operatingSystem, "amazon-linux"):
+		return "ec2-user"
+	case strings.HasPrefix(operatingSystem, "debian"):
+		return "admin"
+	default:
+		return "ubuntu"
+	}
 }
 
 func (p *Provider) validateClients() error {

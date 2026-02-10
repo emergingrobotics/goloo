@@ -238,7 +238,7 @@ func DetectProvider(providerFlag string, configuration *config.Config) string {
 	if providerFlag == "local" {
 		return "multipass"
 	}
-	if configuration.VM.StackID != "" {
+	if configuration.AWS != nil {
 		return "aws"
 	}
 	return "multipass"
@@ -339,21 +339,15 @@ func cmdCreate(ctx context.Context, command *Command) error {
 	}
 
 	fmt.Printf("Created %s via %s\n", configuration.VM.Name, vmProvider.Name())
-	if configuration.VM.PublicIP != "" {
-		fmt.Printf("IP: %s\n", configuration.VM.PublicIP)
+	if configuration.AWS != nil && configuration.AWS.PublicIP != "" {
+		fmt.Printf("IP: %s\n", configuration.AWS.PublicIP)
+	} else if configuration.Local != nil && configuration.Local.IP != "" {
+		fmt.Printf("IP: %s\n", configuration.Local.IP)
 	}
-	if configuration.DNS != nil && configuration.DNS.FQDN != "" {
-		fmt.Printf("DNS: %s\n", configuration.DNS.FQDN)
+	if configuration.AWS != nil && configuration.AWS.FQDN != "" {
+		fmt.Printf("DNS: %s\n", configuration.AWS.FQDN)
 	}
-	if len(configuration.VM.Users) > 0 {
-		target := configuration.VM.PublicIP
-		if configuration.DNS != nil && configuration.DNS.FQDN != "" {
-			target = configuration.DNS.FQDN
-		}
-		if target != "" {
-			fmt.Printf("SSH: ssh %s@%s\n", configuration.VM.Users[0].Username, target)
-		}
-	}
+	fmt.Printf("SSH: goloo ssh %s\n", configuration.VM.Name)
 
 	return nil
 }
@@ -496,12 +490,24 @@ func cmdStart(ctx context.Context, command *Command) error {
 	fmt.Printf("Started %s\n", configuration.VM.Name)
 
 	status, err := vmProvider.Status(ctx, configuration)
-	if err == nil && status.IP != "" && status.IP != configuration.VM.PublicIP {
-		configuration.VM.PublicIP = status.IP
-		if saveErr := config.Save(configPath, configuration); saveErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
+	if err == nil && status.IP != "" {
+		currentIP := ""
+		if configuration.AWS != nil {
+			currentIP = configuration.AWS.PublicIP
+		} else if configuration.Local != nil {
+			currentIP = configuration.Local.IP
 		}
-		fmt.Printf("IP: %s\n", status.IP)
+		if status.IP != currentIP {
+			if configuration.AWS != nil {
+				configuration.AWS.PublicIP = status.IP
+			} else if configuration.Local != nil {
+				configuration.Local.IP = status.IP
+			}
+			if saveErr := config.Save(configPath, configuration); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
+			}
+			fmt.Printf("IP: %s\n", status.IP)
+		}
 	}
 
 	return nil
@@ -522,7 +528,7 @@ func cmdDNSSwap(ctx context.Context, command *Command) error {
 		return fmt.Errorf("DNS swapped but failed to save config: %w", err)
 	}
 
-	fmt.Printf("DNS swapped: %s -> %s\n", configuration.DNS.FQDN, configuration.VM.PublicIP)
+	fmt.Printf("DNS swapped: %s -> %s\n", configuration.AWS.FQDN, configuration.AWS.PublicIP)
 	return nil
 }
 
@@ -559,7 +565,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Provider Auto-Detection:")
 	fmt.Println("  If no --aws or --local flag is given, the provider is detected from:")
-	fmt.Println("  1. Existing stack_id in config -> AWS")
+	fmt.Println("  1. Existing 'aws' state section in config -> AWS")
 	fmt.Println("  2. Default -> Multipass (local)")
 	fmt.Println()
 	fmt.Println("Examples:")
