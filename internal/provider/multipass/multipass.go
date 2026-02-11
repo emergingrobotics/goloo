@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/emergingrobotics/goloo/internal/config"
 	"github.com/emergingrobotics/goloo/internal/provider"
@@ -24,17 +25,23 @@ func (p *Provider) Name() string {
 	return "multipass"
 }
 
-func (p *Provider) Create(context context.Context, configuration *config.Config, cloudInitPath string) error {
+func (p *Provider) Create(ctx context.Context, configuration *config.Config, cloudInitPath string) error {
 	arguments := BuildLaunchArgs(configuration, cloudInitPath)
-	output, err := p.runCommand(context, arguments...)
-	if err != nil {
-		return fmt.Errorf("multipass launch failed: %s: %w", string(output), err)
+
+	if p.Verbose && cloudInitPath != "" {
+		if err := p.launchWithCloudInitTailing(ctx, configuration.VM.Name, arguments); err != nil {
+			return fmt.Errorf("multipass launch failed: %w", err)
+		}
+	} else {
+		if err := p.runStreamingCommand(ctx, arguments...); err != nil {
+			return fmt.Errorf("multipass launch failed: %w", err)
+		}
 	}
 
 	configuration.Local = &config.LocalState{}
 
 	p.verboseLog("getting VM info for %q", configuration.VM.Name)
-	info, err := p.getInfo(context, configuration.VM.Name)
+	info, err := p.getInfo(ctx, configuration.VM.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get VM info after creation: %w", err)
 	}
@@ -46,7 +53,7 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 
 	for _, mount := range configuration.VM.Mounts {
 		mountArgs := []string{"mount", mount.Source, fmt.Sprintf("%s:%s", configuration.VM.Name, mount.Target)}
-		if _, err := p.runCommand(context, mountArgs...); err != nil {
+		if _, err := p.runCommand(ctx, mountArgs...); err != nil {
 			return fmt.Errorf("failed to mount %s: %w", mount.Source, err)
 		}
 	}
@@ -54,19 +61,19 @@ func (p *Provider) Create(context context.Context, configuration *config.Config,
 	return nil
 }
 
-func (p *Provider) Delete(context context.Context, configuration *config.Config) error {
-	if _, err := p.runCommand(context, "delete", configuration.VM.Name); err != nil {
+func (p *Provider) Delete(ctx context.Context, configuration *config.Config) error {
+	if _, err := p.runCommand(ctx, "delete", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to delete VM %s: %w", configuration.VM.Name, err)
 	}
-	if _, err := p.runCommand(context, "purge"); err != nil {
+	if _, err := p.runCommand(ctx, "purge"); err != nil {
 		return fmt.Errorf("failed to purge deleted VMs: %w", err)
 	}
 	configuration.Local = nil
 	return nil
 }
 
-func (p *Provider) Status(context context.Context, configuration *config.Config) (*provider.VMStatus, error) {
-	info, err := p.getInfo(context, configuration.VM.Name)
+func (p *Provider) Status(ctx context.Context, configuration *config.Config) (*provider.VMStatus, error) {
+	info, err := p.getInfo(ctx, configuration.VM.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +89,8 @@ func (p *Provider) Status(context context.Context, configuration *config.Config)
 	}, nil
 }
 
-func (p *Provider) List(context context.Context) ([]provider.VMStatus, error) {
-	output, err := p.runCommand(context, "list", "--format", "json")
+func (p *Provider) List(ctx context.Context) ([]provider.VMStatus, error) {
+	output, err := p.runCommand(ctx, "list", "--format", "json")
 	if err != nil {
 		return nil, fmt.Errorf("multipass list failed: %w", err)
 	}
@@ -107,23 +114,23 @@ func (p *Provider) List(context context.Context) ([]provider.VMStatus, error) {
 	return statuses, nil
 }
 
-func (p *Provider) SSH(context context.Context, configuration *config.Config) error {
-	command := exec.CommandContext(context, "multipass", "shell", configuration.VM.Name)
+func (p *Provider) SSH(ctx context.Context, configuration *config.Config) error {
+	command := exec.CommandContext(ctx, "multipass", "shell", configuration.VM.Name)
 	command.Stdin = os.Stdin
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	return command.Run()
 }
 
-func (p *Provider) Stop(context context.Context, configuration *config.Config) error {
-	if _, err := p.runCommand(context, "stop", configuration.VM.Name); err != nil {
+func (p *Provider) Stop(ctx context.Context, configuration *config.Config) error {
+	if _, err := p.runCommand(ctx, "stop", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to stop VM %s: %w", configuration.VM.Name, err)
 	}
 	return nil
 }
 
-func (p *Provider) Start(context context.Context, configuration *config.Config) error {
-	if _, err := p.runCommand(context, "start", configuration.VM.Name); err != nil {
+func (p *Provider) Start(ctx context.Context, configuration *config.Config) error {
+	if _, err := p.runCommand(ctx, "start", configuration.VM.Name); err != nil {
 		return fmt.Errorf("failed to start VM %s: %w", configuration.VM.Name, err)
 	}
 	return nil
@@ -180,8 +187,8 @@ func ParseListJSON(data []byte) (*MultipassList, error) {
 	return &list, nil
 }
 
-func (p *Provider) getInfo(context context.Context, name string) (*MultipassVM, error) {
-	output, err := p.runCommand(context, "info", name, "--format", "json")
+func (p *Provider) getInfo(ctx context.Context, name string) (*MultipassVM, error) {
+	output, err := p.runCommand(ctx, "info", name, "--format", "json")
 	if err != nil {
 		return nil, fmt.Errorf("VM not found: check 'goloo list' for available VMs")
 	}
@@ -202,8 +209,77 @@ func (p *Provider) verboseLog(format string, arguments ...interface{}) {
 	}
 }
 
-func (p *Provider) runCommand(context context.Context, arguments ...string) ([]byte, error) {
+func (p *Provider) runCommand(ctx context.Context, arguments ...string) ([]byte, error) {
 	p.verboseLog("exec: multipass %s", strings.Join(arguments, " "))
-	command := exec.CommandContext(context, "multipass", arguments...)
+	command := exec.CommandContext(ctx, "multipass", arguments...)
 	return command.CombinedOutput()
+}
+
+func (p *Provider) runStreamingCommand(ctx context.Context, arguments ...string) error {
+	p.verboseLog("exec: multipass %s", strings.Join(arguments, " "))
+	command := exec.CommandContext(ctx, "multipass", arguments...)
+	command.Stdout = os.Stderr
+	command.Stderr = os.Stderr
+	return command.Run()
+}
+
+func (p *Provider) launchWithCloudInitTailing(ctx context.Context, vmName string, arguments []string) error {
+	p.verboseLog("exec: multipass %s", strings.Join(arguments, " "))
+	launchCmd := exec.CommandContext(ctx, "multipass", arguments...)
+	launchCmd.Stdout = os.Stderr
+	launchCmd.Stderr = os.Stderr
+
+	if err := launchCmd.Start(); err != nil {
+		return err
+	}
+
+	tailCtx, tailCancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		p.tailCloudInitLog(tailCtx, vmName)
+	}()
+
+	launchErr := launchCmd.Wait()
+	tailCancel()
+	<-done
+
+	return launchErr
+}
+
+func (p *Provider) tailCloudInitLog(ctx context.Context, vmName string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+
+		output, err := exec.CommandContext(ctx, "multipass", "info", vmName, "--format", "json").CombinedOutput()
+		if err != nil {
+			continue
+		}
+		info, err := ParseInfoJSON(output)
+		if err != nil {
+			continue
+		}
+		vm, exists := info.Info[vmName]
+		if !exists || vm.State != "Running" {
+			continue
+		}
+		break
+	}
+
+	select {
+	case <-ctx.Done():
+		return
+	default:
+	}
+
+	p.verboseLog("streaming cloud-init log")
+	tailCmd := exec.CommandContext(ctx, "multipass", "exec", vmName, "--",
+		"tail", "-f", "/var/log/cloud-init-output.log")
+	tailCmd.Stdout = os.Stderr
+	tailCmd.Stderr = os.Stderr
+	tailCmd.Run()
 }
