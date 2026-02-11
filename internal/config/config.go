@@ -1,10 +1,17 @@
 package config
 
 type Config struct {
-	VM    *VMConfig   `json:"vm,omitempty"`
-	DNS   *DNSConfig  `json:"dns,omitempty"`
-	Local *LocalState `json:"local,omitempty"`
-	AWS   *AWSState   `json:"aws,omitempty"`
+	VM        *VMConfig        `json:"vm,omitempty"`
+	DNS       *DNSConfig       `json:"dns,omitempty"`
+	CloudInit *CloudInitConfig `json:"cloud_init,omitempty"`
+	Local     *LocalState      `json:"local,omitempty"`
+	AWS       *AWSState        `json:"aws,omitempty"`
+}
+
+type CloudInitConfig struct {
+	Packages   []string               `json:"packages,omitempty"`
+	WorkingDir string                  `json:"working_dir,omitempty"`
+	Vars       map[string]interface{} `json:"vars,omitempty"`
 }
 
 type VMConfig struct {

@@ -185,13 +185,17 @@ func TestProcessValidTemplate(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "test.yaml")
 	os.WriteFile(templatePath, []byte(templateContent), 0644)
 
-	users := []config.User{{Username: "ubuntu", GitHubUsername: "testuser"}}
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "testuser"}},
+		},
+	}
 
 	fakeKeyFetcher := func(username string) (string, error) {
 		return "ssh-ed25519 AAAAC3 fakekey", nil
 	}
 
-	resultPath, err := Process(templatePath, users, fakeKeyFetcher)
+	resultPath, err := Process(templatePath, configuration, fakeKeyFetcher)
 	if err != nil {
 		t.Fatalf("Process() returned error: %v", err)
 	}
@@ -223,7 +227,7 @@ func TestProcessNoUsers(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "nouser.yaml")
 	os.WriteFile(templatePath, []byte(templateContent), 0644)
 
-	resultPath, err := Process(templatePath, nil, FetchGitHubKeys)
+	resultPath, err := Process(templatePath, &config.Config{}, FetchGitHubKeys)
 	if err != nil {
 		t.Fatalf("Process() returned error: %v", err)
 	}
@@ -243,13 +247,17 @@ func TestProcessKeyFetchError(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	os.WriteFile(templatePath, []byte("#cloud-config"), 0644)
 
-	users := []config.User{{Username: "ubuntu", GitHubUsername: "baduser"}}
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "baduser"}},
+		},
+	}
 
 	failingFetcher := func(username string) (string, error) {
 		return "", fmt.Errorf("network error")
 	}
 
-	_, err := Process(templatePath, users, failingFetcher)
+	_, err := Process(templatePath, configuration, failingFetcher)
 	if err == nil {
 		t.Fatal("Process() should propagate key fetch errors")
 	}
@@ -260,9 +268,13 @@ func TestProcessSkipsUsersWithoutGitHub(t *testing.T) {
 	templatePath := filepath.Join(t.TempDir(), "template.yaml")
 	os.WriteFile(templatePath, []byte(templateContent), 0644)
 
-	users := []config.User{
-		{Username: "ubuntu", GitHubUsername: ""},
-		{Username: "admin", GitHubUsername: "validuser"},
+	configuration := &config.Config{
+		VM: &config.VMConfig{
+			Users: []config.User{
+				{Username: "ubuntu", GitHubUsername: ""},
+				{Username: "admin", GitHubUsername: "validuser"},
+			},
+		},
 	}
 
 	fetcher := func(username string) (string, error) {
@@ -272,7 +284,7 @@ func TestProcessSkipsUsersWithoutGitHub(t *testing.T) {
 		return "", fmt.Errorf("should not fetch for empty github username")
 	}
 
-	resultPath, err := Process(templatePath, users, fetcher)
+	resultPath, err := Process(templatePath, configuration, fetcher)
 	if err != nil {
 		t.Fatalf("Process() returned error: %v", err)
 	}

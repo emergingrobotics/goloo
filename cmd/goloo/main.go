@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/emergingrobotics/goloo/internal/cloudinit"
@@ -247,7 +248,7 @@ func DetectProvider(providerFlag string, configuration *config.Config) string {
 func getProvider(providerName string, region string, verbose bool) (provider.VMProvider, error) {
 	switch providerName {
 	case "aws":
-		return awsprovider.New(region), nil
+		return awsprovider.NewWithSDK(region)
 	case "multipass":
 		return multipass.New(verbose), nil
 	default:
@@ -265,12 +266,27 @@ func resolveStackFolder(command *Command) string {
 	return "stacks"
 }
 
+func resolveStackDir(command *Command) string {
+	folder := resolveStackFolder(command)
+
+	if command.FolderPath != "" {
+		directConfig := filepath.Join(folder, "config.json")
+		if _, err := os.Stat(directConfig); err == nil {
+			return folder
+		}
+	}
+
+	return filepath.Join(folder, command.VMName)
+}
+
 func loadConfig(command *Command) (*config.Config, string, error) {
-	return config.Load(resolveStackFolder(command), command.VMName)
+	stackDir := resolveStackDir(command)
+	return config.LoadFromPath(filepath.Join(stackDir, "config.json"))
 }
 
 func resolveCloudInitPath(command *Command) string {
-	path := config.CloudInitPath(resolveStackFolder(command), command.VMName)
+	stackDir := resolveStackDir(command)
+	path := filepath.Join(stackDir, "cloud-init.yaml")
 	if _, err := os.Stat(path); err != nil {
 		return ""
 	}
@@ -319,7 +335,7 @@ func cmdCreate(ctx context.Context, command *Command) error {
 				verboseLog("fetching SSH keys from github.com/%s.keys", user.GitHubUsername)
 			}
 		}
-		processedPath, err := cloudinit.Process(cloudInitSource, configuration.VM.Users, cloudinit.FetchGitHubKeys)
+		processedPath, err := cloudinit.Process(cloudInitSource, configuration, cloudinit.FetchGitHubKeys)
 		if err != nil {
 			return fmt.Errorf("cloud-init processing failed: %w", err)
 		}
@@ -519,7 +535,10 @@ func cmdDNSSwap(ctx context.Context, command *Command) error {
 		return err
 	}
 
-	awsProvider := awsprovider.New(configuration.VM.Region)
+	awsProvider, err := awsprovider.NewWithSDK(configuration.VM.Region)
+	if err != nil {
+		return err
+	}
 	if err := awsProvider.SwapDNS(ctx, configuration); err != nil {
 		return err
 	}

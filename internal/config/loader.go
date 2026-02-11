@@ -23,8 +23,10 @@ func CloudInitPath(folder string, name string) string {
 }
 
 func Load(folder string, name string) (*Config, string, error) {
-	path := ConfigPath(folder, name)
+	return LoadFromPath(ConfigPath(folder, name))
+}
 
+func LoadFromPath(path string) (*Config, string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, "", fmt.Errorf("config file not found: create %s", path)

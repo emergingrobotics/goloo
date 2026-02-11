@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+
 	"github.com/emergingrobotics/goloo/internal/config"
 	"github.com/emergingrobotics/goloo/internal/provider"
 )
@@ -32,6 +34,20 @@ type Provider struct {
 
 func New(region string) *Provider {
 	return &Provider{Region: region}
+}
+
+func NewWithSDK(region string) (*Provider, error) {
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(region))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	return &Provider{
+		Region:         region,
+		CloudFormation: NewSDKCloudFormationClient(awsCfg),
+		EC2:            NewSDKEC2Client(awsCfg),
+		Route53:        NewSDKRoute53Client(awsCfg),
+		SSM:            NewSDKSSMClient(awsCfg),
+	}, nil
 }
 
 func NewWithClients(region string, cloudFormation CloudFormationClient, ec2 EC2Client, route53 Route53Client, ssm SSMClient) *Provider {

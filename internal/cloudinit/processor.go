@@ -10,11 +10,13 @@ import (
 
 type KeyFetchFunc func(username string) (string, error)
 
-func Process(templatePath string, users []config.User, fetchKeys KeyFetchFunc) (string, error) {
+func Process(templatePath string, configuration *config.Config, fetchKeys KeyFetchFunc) (string, error) {
 	content, err := os.ReadFile(templatePath)
 	if err != nil {
 		return "", fmt.Errorf("cloud-init template not found: %s", templatePath)
 	}
+
+	users := getUsers(configuration)
 
 	keysPerUser := make(map[string]string)
 	for _, user := range users {
@@ -28,7 +30,17 @@ func Process(templatePath string, users []config.User, fetchKeys KeyFetchFunc) (
 		keysPerUser[user.Username] = keys
 	}
 
-	processed := substituteVariables(string(content), users, keysPerUser)
+	rendered := string(content)
+
+	if strings.Contains(rendered, "{{") {
+		templateData := buildTemplateData(configuration, keysPerUser)
+		rendered, err = renderGoTemplate(rendered, templateData)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	rendered = substituteVariables(rendered, users, keysPerUser)
 
 	temporaryFile, err := os.CreateTemp("", "goloo-cloudinit-*.yaml")
 	if err != nil {
@@ -36,12 +48,19 @@ func Process(templatePath string, users []config.User, fetchKeys KeyFetchFunc) (
 	}
 	defer temporaryFile.Close()
 
-	if _, err := temporaryFile.WriteString(processed); err != nil {
+	if _, err := temporaryFile.WriteString(rendered); err != nil {
 		os.Remove(temporaryFile.Name())
 		return "", fmt.Errorf("failed to write processed cloud-init: %w", err)
 	}
 
 	return temporaryFile.Name(), nil
+}
+
+func getUsers(configuration *config.Config) []config.User {
+	if configuration != nil && configuration.VM != nil {
+		return configuration.VM.Users
+	}
+	return nil
 }
 
 func substituteVariables(content string, users []config.User, keysPerUser map[string]string) string {
