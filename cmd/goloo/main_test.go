@@ -135,13 +135,13 @@ func TestParseArgsCreateWithMultipleFlags(t *testing.T) {
 	}
 }
 
-func TestParseArgsDeleteWithName(t *testing.T) {
-	command, err := ParseArgs([]string{"delete", "devbox"})
+func TestParseArgsDestroyWithName(t *testing.T) {
+	command, err := ParseArgs([]string{"destroy", "devbox"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Action != "delete" {
-		t.Errorf("expected action 'delete', got %q", command.Action)
+	if command.Action != "destroy" {
+		t.Errorf("expected action 'destroy', got %q", command.Action)
 	}
 	if command.VMName != "devbox" {
 		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
@@ -272,19 +272,19 @@ func TestParseArgsLegacyCreate(t *testing.T) {
 	}
 }
 
-func TestParseArgsLegacyDelete(t *testing.T) {
+func TestParseArgsLegacyDestroy(t *testing.T) {
 	command, err := ParseArgs([]string{"-d", "-n", "devbox"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Action != "delete" {
-		t.Errorf("expected action 'delete', got %q", command.Action)
+	if command.Action != "destroy" {
+		t.Errorf("expected action 'destroy', got %q", command.Action)
 	}
 	if command.VMName != "devbox" {
 		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
 	}
 	if command.ProviderFlag != "aws" {
-		t.Errorf("expected ProviderFlag 'aws' for legacy delete, got %q", command.ProviderFlag)
+		t.Errorf("expected ProviderFlag 'aws' for legacy destroy, got %q", command.ProviderFlag)
 	}
 }
 
@@ -301,13 +301,13 @@ func TestParseArgsLegacyReversedOrder(t *testing.T) {
 	}
 }
 
-func TestParseArgsLegacyDeleteReversed(t *testing.T) {
+func TestParseArgsLegacyDestroyReversed(t *testing.T) {
 	command, err := ParseArgs([]string{"-n", "devbox", "-d"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if command.Action != "delete" {
-		t.Errorf("expected action 'delete', got %q", command.Action)
+	if command.Action != "destroy" {
+		t.Errorf("expected action 'destroy', got %q", command.Action)
 	}
 	if command.VMName != "devbox" {
 		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
@@ -336,7 +336,7 @@ func TestParseArgsLegacyNameMissingValue(t *testing.T) {
 }
 
 func TestParseArgsMissingNameForCommands(t *testing.T) {
-	for _, action := range []string{"create", "delete", "ssh", "status", "stop", "start"} {
+	for _, action := range []string{"create", "destroy", "ssh", "status", "stop", "start"} {
 		_, err := ParseArgs([]string{action})
 		if err == nil {
 			t.Fatalf("expected error for %s without name", action)

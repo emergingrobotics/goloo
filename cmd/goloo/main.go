@@ -58,8 +58,8 @@ func run(args []string) error {
 		return nil
 	case "create":
 		return cmdCreate(ctx, command)
-	case "delete":
-		return cmdDelete(ctx, command)
+	case "destroy":
+		return cmdDestroy(ctx, command)
 	case "list":
 		return cmdList(ctx, command)
 	case "ssh":
@@ -90,7 +90,7 @@ func ParseArgs(args []string) (*Command, error) {
 	args = filtered
 
 	if len(args) == 0 {
-		return nil, fmt.Errorf("no command provided\n\nUsage: goloo <command> <name> [flags]\nCommands: create, delete, list, ssh, status, stop, start, dns swap\n\nRun 'goloo help' for details")
+		return nil, fmt.Errorf("no command provided\n\nUsage: goloo <command> <name> [flags]\nCommands: create, destroy, list, ssh, status, stop, start, dns swap\n\nRun 'goloo help' for details")
 	}
 
 	first := args[0]
@@ -160,7 +160,7 @@ func parseLegacyArgs(args []string) (*Command, error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-c":
-			if command.Action == "delete" {
+			if command.Action == "destroy" {
 				return nil, fmt.Errorf("cannot use -c and -d together")
 			}
 			command.Action = "create"
@@ -168,7 +168,7 @@ func parseLegacyArgs(args []string) (*Command, error) {
 			if command.Action == "create" {
 				return nil, fmt.Errorf("cannot use -c and -d together")
 			}
-			command.Action = "delete"
+			command.Action = "destroy"
 		case "-n":
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("-n requires a VM name")
@@ -181,7 +181,7 @@ func parseLegacyArgs(args []string) (*Command, error) {
 	}
 
 	if command.Action == "" {
-		return nil, fmt.Errorf("missing action flag: use -c (create) or -d (delete)")
+		return nil, fmt.Errorf("missing action flag: use -c (create) or -d (destroy)")
 	}
 	if command.VMName == "" {
 		return nil, fmt.Errorf("-n <name> required")
@@ -368,7 +368,7 @@ func cmdCreate(ctx context.Context, command *Command) error {
 	return nil
 }
 
-func cmdDelete(ctx context.Context, command *Command) error {
+func cmdDestroy(ctx context.Context, command *Command) error {
 	configuration, configPath, err := loadConfig(command)
 	if err != nil {
 		return err
@@ -385,10 +385,10 @@ func cmdDelete(ctx context.Context, command *Command) error {
 	}
 
 	if err := config.Save(configPath, configuration); err != nil {
-		return fmt.Errorf("VM deleted but failed to save config: %w", err)
+		return fmt.Errorf("VM destroyed but failed to save config: %w", err)
 	}
 
-	fmt.Printf("Deleted %s\n", configuration.VM.Name)
+	fmt.Printf("Destroyed %s\n", configuration.VM.Name)
 	return nil
 }
 
@@ -558,7 +558,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Commands:")
 	fmt.Println("  create <name>       Create a VM")
-	fmt.Println("  delete <name>       Delete a VM")
+	fmt.Println("  destroy <name>      Destroy a VM")
 	fmt.Println("  list                List all VMs")
 	fmt.Println("  ssh <name>          SSH into a VM")
 	fmt.Println("  status <name>       Show VM status")
@@ -580,7 +580,7 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Legacy Flags (aws-ec2 compatibility):")
 	fmt.Println("  -c -n <name>        Create AWS VM")
-	fmt.Println("  -d -n <name>        Delete AWS VM")
+	fmt.Println("  -d -n <name>        Destroy AWS VM")
 	fmt.Println()
 	fmt.Println("Provider Auto-Detection:")
 	fmt.Println("  If no --aws or --local flag is given, the provider is detected from:")
@@ -593,7 +593,7 @@ func printUsage() {
 	fmt.Println("  goloo create devbox -f ~/my-servers         Use ~/my-servers/devbox/")
 	fmt.Println("  goloo create devbox -u gherlein             Fetch SSH keys for gherlein")
 	fmt.Println("  goloo create devbox -u \"alice,bob\"           Fetch SSH keys for multiple users")
-	fmt.Println("  goloo delete devbox                         Delete VM (auto-detects provider)")
+	fmt.Println("  goloo destroy devbox                        Destroy VM (auto-detects provider)")
 	fmt.Println("  goloo ssh devbox                            SSH into VM")
 	fmt.Println("  goloo dns swap devbox                       Update DNS to current IP")
 }
