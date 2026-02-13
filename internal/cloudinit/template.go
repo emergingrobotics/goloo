@@ -10,8 +10,9 @@ import (
 )
 
 type TemplateUser struct {
-	Username string
-	SSHKeys  []string
+	Username       string
+	GithubUsername string
+	SSHKeys        []string
 }
 
 type TemplateData struct {
@@ -56,7 +57,8 @@ func buildTemplateData(configuration *config.Config, keysPerUser map[string]stri
 
 		for _, user := range configuration.VM.Users {
 			templateUser := TemplateUser{
-				Username: user.Username,
+				Username:       user.Username,
+				GithubUsername: user.GitHubUsername,
 			}
 			if keys, exists := keysPerUser[user.Username]; exists {
 				for _, key := range strings.Split(keys, "\n") {

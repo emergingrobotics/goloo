@@ -129,6 +129,12 @@ func TestApplyDefaultsSetsValues(t *testing.T) {
 	if configuration.VM.InstanceType != "t3.micro" {
 		t.Errorf("Default InstanceType = %q, want %q", configuration.VM.InstanceType, "t3.micro")
 	}
+	if configuration.CloudInit == nil {
+		t.Fatal("Default CloudInit should not be nil")
+	}
+	if configuration.CloudInit.WorkingDir != "/var/www/html" {
+		t.Errorf("Default WorkingDir = %q, want %q", configuration.CloudInit.WorkingDir, "/var/www/html")
+	}
 }
 
 func TestApplyDefaultsPreservesExistingValues(t *testing.T) {
@@ -159,6 +165,19 @@ func TestApplyDefaultsPreservesExistingValues(t *testing.T) {
 	}
 	if configuration.VM.Region != "eu-west-1" {
 		t.Errorf("Region should be preserved: got %q, want %q", configuration.VM.Region, "eu-west-1")
+	}
+}
+
+func TestApplyDefaultsPreservesExistingWorkingDir(t *testing.T) {
+	configuration := &Config{
+		VM:        &VMConfig{Name: "devbox"},
+		CloudInit: &CloudInitConfig{WorkingDir: "/opt/app"},
+	}
+
+	ApplyDefaults(configuration)
+
+	if configuration.CloudInit.WorkingDir != "/opt/app" {
+		t.Errorf("WorkingDir should be preserved: got %q, want %q", configuration.CloudInit.WorkingDir, "/opt/app")
 	}
 }
 

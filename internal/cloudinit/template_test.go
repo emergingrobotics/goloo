@@ -98,6 +98,9 @@ func TestBuildTemplateDataFromFullConfig(t *testing.T) {
 	if data.Users[0].Username != "ubuntu" {
 		t.Errorf("Users[0].Username = %q, want %q", data.Users[0].Username, "ubuntu")
 	}
+	if data.Users[0].GithubUsername != "testuser" {
+		t.Errorf("Users[0].GithubUsername = %q, want %q", data.Users[0].GithubUsername, "testuser")
+	}
 	if len(data.Users[0].SSHKeys) != 1 || data.Users[0].SSHKeys[0] != "ssh-ed25519 AAAA key1" {
 		t.Errorf("Users[0].SSHKeys = %v, want [ssh-ed25519 AAAA key1]", data.Users[0].SSHKeys)
 	}

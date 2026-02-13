@@ -593,6 +593,8 @@ func printUsage() {
 	fmt.Println("  goloo create devbox -f ~/my-servers         Use ~/my-servers/devbox/")
 	fmt.Println("  goloo create devbox -u gherlein             Fetch SSH keys for gherlein")
 	fmt.Println("  goloo create devbox -u \"alice,bob\"           Fetch SSH keys for multiple users")
+	fmt.Println("  goloo list                                  List local VMs and IPs")
+	fmt.Println("  goloo list --aws                            List AWS VMs")
 	fmt.Println("  goloo destroy devbox                        Destroy VM (auto-detects provider)")
 	fmt.Println("  goloo ssh devbox                            SSH into VM")
 	fmt.Println("  goloo dns swap devbox                       Update DNS to current IP")

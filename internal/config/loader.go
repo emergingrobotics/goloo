@@ -80,6 +80,12 @@ func ApplyDefaults(configuration *Config) {
 	if configuration.DNS != nil && configuration.DNS.TTL == 0 {
 		configuration.DNS.TTL = 300
 	}
+	if configuration.CloudInit == nil {
+		configuration.CloudInit = &CloudInitConfig{}
+	}
+	if configuration.CloudInit.WorkingDir == "" {
+		configuration.CloudInit.WorkingDir = "/var/www/html"
+	}
 }
 
 func Validate(configuration *Config) error {
