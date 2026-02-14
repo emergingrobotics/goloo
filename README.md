@@ -483,6 +483,56 @@ goloo dns swap web-server-v2
 goloo delete web-server-v1
 ```
 
+## Releasing .deb Packages with GoReleaser
+
+Goloo uses [GoReleaser](https://goreleaser.com) to cross-compile for amd64 and arm64 and produce `.deb` packages on each tagged release. The `.deb` files are published to a GitHub Pages APT repository so that VMs provisioned by goloo can install it via `apt`.
+
+### How it works
+
+1. Tag a release: `git tag v1.0.0 && git push --tags`
+2. GitHub Actions runs GoReleaser, which cross-compiles and builds `.deb` packages for amd64 and arm64
+3. The workflow updates the APT repository structure and deploys it to GitHub Pages
+4. VMs can then `apt install goloo`
+
+### Installing goloo on a provisioned VM
+
+Add the APT repository to your cloud-init template:
+
+```yaml
+#cloud-config
+apt:
+  sources:
+    goloo:
+      source: "deb [signed-by=/etc/apt/keyrings/goloo.gpg] https://emergingrobotics.github.io/goloo stable main"
+      keyid: YOUR_GPG_FINGERPRINT
+      keyserver: https://emergingrobotics.github.io/goloo/key.gpg
+
+packages:
+  - goloo
+```
+
+This works identically on local Multipass VMs and AWS EC2 instances — cloud-init's `apt` module handles the repository setup on both providers.
+
+Or install manually on an existing machine:
+
+```bash
+curl -fsSL https://emergingrobotics.github.io/goloo/key.gpg \
+  | sudo tee /etc/apt/keyrings/goloo.gpg > /dev/null
+echo "deb [signed-by=/etc/apt/keyrings/goloo.gpg] https://emergingrobotics.github.io/goloo stable main" \
+  | sudo tee /etc/apt/sources.list.d/goloo.list
+sudo apt update && sudo apt install goloo
+```
+
+### Building a release locally
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+This produces `.deb` files in `dist/` without publishing. Useful for testing the packaging before tagging a real release.
+
+See [docs/debian.md](docs/debian.md) for details on `.deb` file structure, GPG signing, and repository hosting options.
+
 ## Building from Source
 
 Requires Go 1.21+.
