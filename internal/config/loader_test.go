@@ -469,6 +469,146 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	}
 }
 
+func TestStatePathBuildsCorrectPath(t *testing.T) {
+	got := StatePath("stacks", "devbox", "local")
+	want := filepath.Join("stacks", "devbox", "local", "config.json")
+	if got != want {
+		t.Errorf("StatePath() = %q, want %q", got, want)
+	}
+
+	got = StatePath("stacks", "devbox", "aws")
+	want = filepath.Join("stacks", "devbox", "aws", "config.json")
+	if got != want {
+		t.Errorf("StatePath() = %q, want %q", got, want)
+	}
+}
+
+func TestStateCloudInitPathBuildsCorrectPath(t *testing.T) {
+	got := StateCloudInitPath("stacks", "devbox", "local")
+	want := filepath.Join("stacks", "devbox", "local", "cloud-init.yaml")
+	if got != want {
+		t.Errorf("StateCloudInitPath() = %q, want %q", got, want)
+	}
+}
+
+func TestSaveAndLoadState(t *testing.T) {
+	directory := t.TempDir()
+	original := &Config{
+		VM: &VMConfig{
+			Name:   "devbox",
+			CPUs:   4,
+			Memory: "4G",
+			Disk:   "40G",
+			Image:  "24.04",
+			Users:  []User{{Username: "ubuntu", GitHubUsername: "gherlein"}},
+		},
+		Local: &LocalState{
+			IP: "10.0.0.5",
+		},
+	}
+
+	if err := SaveState(directory, "devbox", "local", original); err != nil {
+		t.Fatalf("SaveState() returned error: %v", err)
+	}
+
+	loaded, path, err := LoadState(directory, "devbox", "local")
+	if err != nil {
+		t.Fatalf("LoadState() returned error: %v", err)
+	}
+
+	expectedPath := filepath.Join(directory, "devbox", "local", "config.json")
+	if path != expectedPath {
+		t.Errorf("LoadState() path = %q, want %q", path, expectedPath)
+	}
+	if loaded.VM.Name != "devbox" {
+		t.Errorf("VM.Name = %q, want %q", loaded.VM.Name, "devbox")
+	}
+	if loaded.Local == nil || loaded.Local.IP != "10.0.0.5" {
+		t.Errorf("Local.IP = %v, want 10.0.0.5", loaded.Local)
+	}
+}
+
+func TestHasState(t *testing.T) {
+	directory := t.TempDir()
+
+	if HasState(directory, "devbox", "local") {
+		t.Error("HasState() should return false when state doesn't exist")
+	}
+
+	cfg := &Config{
+		VM: &VMConfig{
+			Name:  "devbox",
+			Users: []User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+	}
+	if err := SaveState(directory, "devbox", "local", cfg); err != nil {
+		t.Fatalf("SaveState() returned error: %v", err)
+	}
+
+	if !HasState(directory, "devbox", "local") {
+		t.Error("HasState() should return true after SaveState()")
+	}
+
+	if HasState(directory, "devbox", "aws") {
+		t.Error("HasState() should return false for a different provider")
+	}
+}
+
+func TestClearState(t *testing.T) {
+	directory := t.TempDir()
+	cfg := &Config{
+		VM: &VMConfig{
+			Name:  "devbox",
+			Users: []User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+	}
+	if err := SaveState(directory, "devbox", "local", cfg); err != nil {
+		t.Fatalf("SaveState() returned error: %v", err)
+	}
+
+	if !HasState(directory, "devbox", "local") {
+		t.Fatal("state should exist before ClearState()")
+	}
+
+	if err := ClearState(directory, "devbox", "local"); err != nil {
+		t.Fatalf("ClearState() returned error: %v", err)
+	}
+
+	if HasState(directory, "devbox", "local") {
+		t.Error("HasState() should return false after ClearState()")
+	}
+}
+
+func TestCopyCloudInitToState(t *testing.T) {
+	directory := t.TempDir()
+
+	cloudInitContent := "#cloud-config\npackages:\n  - vim\n"
+	cloudInitPath := filepath.Join(directory, "cloud-init.yaml")
+	os.WriteFile(cloudInitPath, []byte(cloudInitContent), 0644)
+
+	vmDir := filepath.Join(directory, "devbox")
+	os.MkdirAll(vmDir, 0755)
+
+	if err := CopyCloudInitToState(directory, "devbox", "local", cloudInitPath); err != nil {
+		t.Fatalf("CopyCloudInitToState() returned error: %v", err)
+	}
+
+	destPath := filepath.Join(directory, "devbox", "local", "cloud-init.yaml")
+	data, err := os.ReadFile(destPath)
+	if err != nil {
+		t.Fatalf("failed to read copied cloud-init: %v", err)
+	}
+	if string(data) != cloudInitContent {
+		t.Errorf("copied cloud-init content = %q, want %q", string(data), cloudInitContent)
+	}
+}
+
+func TestCopyCloudInitToStateEmptyPath(t *testing.T) {
+	if err := CopyCloudInitToState("stacks", "devbox", "local", ""); err != nil {
+		t.Errorf("CopyCloudInitToState() with empty path should return nil, got: %v", err)
+	}
+}
+
 func TestLoadValidatesAfterParsing(t *testing.T) {
 	directory := t.TempDir()
 	vmDirectory := filepath.Join(directory, "invalid")

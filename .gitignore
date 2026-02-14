@@ -31,6 +31,10 @@ coverage.html
 *.pem
 *.key
 
+# Provider state directories
+stacks/*/local/
+stacks/*/aws/
+
 # Temp files
 *.tmp
 goloo-cloudinit-*.yaml

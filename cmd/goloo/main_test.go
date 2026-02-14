@@ -569,101 +569,140 @@ func TestParseArgsNoHostsDefaultFalse(t *testing.T) {
 }
 
 func TestDetectProviderAWSFlag(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{}}
-	result := DetectProvider("aws", configuration)
+	result := DetectProvider("aws")
 	if result != "aws" {
 		t.Errorf("expected 'aws', got %q", result)
 	}
 }
 
 func TestDetectProviderLocalFlag(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{}}
-	result := DetectProvider("local", configuration)
+	result := DetectProvider("local")
 	if result != "multipass" {
 		t.Errorf("expected 'multipass', got %q", result)
 	}
 }
 
-func TestDetectProviderFromAWSState(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
-		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:us-east-1:123456789:stack/goloo-test/abc"},
-	}
-	result := DetectProvider("", configuration)
-	if result != "aws" {
-		t.Errorf("expected 'aws' from AWS state, got %q", result)
-	}
-}
-
-func TestDetectProviderDNSDomainDoesNotForceAWS(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
-		DNS: &config.DNSConfig{Domain: "example.com"},
-	}
-	result := DetectProvider("", configuration)
-	if result != "multipass" {
-		t.Errorf("expected 'multipass' (DNS alone should not force AWS), got %q", result)
-	}
-}
-
 func TestDetectProviderDefault(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{}}
-	result := DetectProvider("", configuration)
+	result := DetectProvider("")
 	if result != "multipass" {
 		t.Errorf("expected 'multipass' as default, got %q", result)
 	}
 }
 
-func TestDetectProviderFlagOverridesAWSState(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
+func TestDetectProviderNoAutoDetectFromConfig(t *testing.T) {
+	result := DetectProvider("")
+	if result != "multipass" {
+		t.Errorf("expected 'multipass' (no auto-detect from config), got %q", result)
+	}
+}
+
+func TestDetectProviderForStateAWSFlag(t *testing.T) {
+	directory := t.TempDir()
+	result := DetectProviderForState("aws", directory, "devbox")
+	if result != "aws" {
+		t.Errorf("expected 'aws', got %q", result)
+	}
+}
+
+func TestDetectProviderForStateLocalFlag(t *testing.T) {
+	directory := t.TempDir()
+	result := DetectProviderForState("local", directory, "devbox")
+	if result != "multipass" {
+		t.Errorf("expected 'multipass', got %q", result)
+	}
+}
+
+func TestDetectProviderForStateNoFlagNoState(t *testing.T) {
+	directory := t.TempDir()
+	result := DetectProviderForState("", directory, "devbox")
+	if result != "multipass" {
+		t.Errorf("expected 'multipass' as default, got %q", result)
+	}
+}
+
+func TestDetectProviderForStateOnlyAWSState(t *testing.T) {
+	directory := t.TempDir()
+	cfg := &config.Config{
+		VM: &config.VMConfig{
+			Name:  "devbox",
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:us-east-1:123456789:stack/test/abc"},
+	}
+	config.SaveState(directory, "devbox", "aws", cfg)
+
+	result := DetectProviderForState("", directory, "devbox")
+	if result != "aws" {
+		t.Errorf("expected 'aws' when only AWS state exists, got %q", result)
+	}
+}
+
+func TestDetectProviderForStateOnlyLocalState(t *testing.T) {
+	directory := t.TempDir()
+	cfg := &config.Config{
+		VM: &config.VMConfig{
+			Name:  "devbox",
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+		Local: &config.LocalState{IP: "10.0.0.5"},
+	}
+	config.SaveState(directory, "devbox", "local", cfg)
+
+	result := DetectProviderForState("", directory, "devbox")
+	if result != "multipass" {
+		t.Errorf("expected 'multipass' when only local state exists, got %q", result)
+	}
+}
+
+func TestDetectProviderForStateBothExist(t *testing.T) {
+	directory := t.TempDir()
+	localCfg := &config.Config{
+		VM: &config.VMConfig{
+			Name:  "devbox",
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+		Local: &config.LocalState{IP: "10.0.0.5"},
+	}
+	config.SaveState(directory, "devbox", "local", localCfg)
+
+	awsCfg := &config.Config{
+		VM: &config.VMConfig{
+			Name:  "devbox",
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
 		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:..."},
 	}
-	result := DetectProvider("local", configuration)
+	config.SaveState(directory, "devbox", "aws", awsCfg)
+
+	result := DetectProviderForState("", directory, "devbox")
+	if result != "multipass" {
+		t.Errorf("expected 'multipass' when both states exist (default to local), got %q", result)
+	}
+}
+
+func TestDetectProviderForStateFlagOverridesState(t *testing.T) {
+	directory := t.TempDir()
+	cfg := &config.Config{
+		VM: &config.VMConfig{
+			Name:  "devbox",
+			Users: []config.User{{Username: "ubuntu", GitHubUsername: "test"}},
+		},
+		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:..."},
+	}
+	config.SaveState(directory, "devbox", "aws", cfg)
+
+	result := DetectProviderForState("local", directory, "devbox")
 	if result != "multipass" {
 		t.Errorf("expected 'multipass' (flag override), got %q", result)
 	}
 }
 
-func TestDetectProviderAWSFlagWithDNS(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
-		DNS: &config.DNSConfig{Domain: "example.com"},
+func TestProviderDirName(t *testing.T) {
+	if got := providerDirName("multipass"); got != "local" {
+		t.Errorf("providerDirName(\"multipass\") = %q, want \"local\"", got)
 	}
-	result := DetectProvider("aws", configuration)
-	if result != "aws" {
-		t.Errorf("expected 'aws' (explicit flag), got %q", result)
-	}
-}
-
-func TestDetectProviderAWSStateBeforeDNS(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
-		DNS: &config.DNSConfig{Domain: "example.com"},
-		AWS: &config.AWSState{StackID: "arn:aws:cloudformation:..."},
-	}
-	result := DetectProvider("", configuration)
-	if result != "aws" {
-		t.Errorf("expected 'aws' from AWS state, got %q", result)
-	}
-}
-
-func TestDetectProviderNilDNS(t *testing.T) {
-	configuration := &config.Config{VM: &config.VMConfig{}}
-	result := DetectProvider("", configuration)
-	if result != "multipass" {
-		t.Errorf("expected 'multipass' with nil DNS, got %q", result)
-	}
-}
-
-func TestDetectProviderEmptyDNSDomain(t *testing.T) {
-	configuration := &config.Config{
-		VM:  &config.VMConfig{},
-		DNS: &config.DNSConfig{},
-	}
-	result := DetectProvider("", configuration)
-	if result != "multipass" {
-		t.Errorf("expected 'multipass' with empty DNS domain, got %q", result)
+	if got := providerDirName("aws"); got != "aws" {
+		t.Errorf("providerDirName(\"aws\") = %q, want \"aws\"", got)
 	}
 }
 

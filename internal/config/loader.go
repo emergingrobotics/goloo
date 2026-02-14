@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -86,6 +87,64 @@ func ApplyDefaults(configuration *Config) {
 	if configuration.CloudInit.WorkingDir == "" {
 		configuration.CloudInit.WorkingDir = "/var/www/html"
 	}
+}
+
+func StatePath(folder, name, providerName string) string {
+	return filepath.Join(ResolveFolder(folder, name), providerName, "config.json")
+}
+
+func StateCloudInitPath(folder, name, providerName string) string {
+	return filepath.Join(ResolveFolder(folder, name), providerName, "cloud-init.yaml")
+}
+
+func SaveState(folder, name, providerName string, cfg *Config) error {
+	stateDir := filepath.Join(ResolveFolder(folder, name), providerName)
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return fmt.Errorf("failed to create state directory %s: %w", stateDir, err)
+	}
+	return Save(filepath.Join(stateDir, "config.json"), cfg)
+}
+
+func LoadState(folder, name, providerName string) (*Config, string, error) {
+	return LoadFromPath(StatePath(folder, name, providerName))
+}
+
+func HasState(folder, name, providerName string) bool {
+	_, err := os.Stat(StatePath(folder, name, providerName))
+	return err == nil
+}
+
+func ClearState(folder, name, providerName string) error {
+	stateDir := filepath.Join(ResolveFolder(folder, name), providerName)
+	return os.RemoveAll(stateDir)
+}
+
+func CopyCloudInitToState(folder, name, providerName, cloudInitPath string) error {
+	if cloudInitPath == "" {
+		return nil
+	}
+	stateDir := filepath.Join(ResolveFolder(folder, name), providerName)
+	if err := os.MkdirAll(stateDir, 0755); err != nil {
+		return fmt.Errorf("failed to create state directory %s: %w", stateDir, err)
+	}
+
+	src, err := os.Open(cloudInitPath)
+	if err != nil {
+		return fmt.Errorf("failed to open cloud-init file %s: %w", cloudInitPath, err)
+	}
+	defer src.Close()
+
+	destPath := filepath.Join(stateDir, "cloud-init.yaml")
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("failed to create state cloud-init file %s: %w", destPath, err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to copy cloud-init to state: %w", err)
+	}
+	return nil
 }
 
 func Validate(configuration *Config) error {

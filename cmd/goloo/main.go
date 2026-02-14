@@ -236,17 +236,36 @@ func parseNameAndFlags(command *Command, remaining []string) (*Command, error) {
 	return command, nil
 }
 
-func DetectProvider(providerFlag string, configuration *config.Config) string {
+func DetectProvider(providerFlag string) string {
 	if providerFlag == "aws" {
 		return "aws"
 	}
 	if providerFlag == "local" {
 		return "multipass"
 	}
-	if configuration.AWS != nil {
+	return "multipass"
+}
+
+func DetectProviderForState(providerFlag, stackFolder, vmName string) string {
+	if providerFlag == "aws" {
+		return "aws"
+	}
+	if providerFlag == "local" {
+		return "multipass"
+	}
+	hasLocal := config.HasState(stackFolder, vmName, "local")
+	hasAWS := config.HasState(stackFolder, vmName, "aws")
+	if hasAWS && !hasLocal {
 		return "aws"
 	}
 	return "multipass"
+}
+
+func providerDirName(providerName string) string {
+	if providerName == "multipass" {
+		return "local"
+	}
+	return providerName
 }
 
 func getProvider(providerName string, region string, verbose bool) (provider.VMProvider, error) {
@@ -323,12 +342,15 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		verboseLog("users overridden from CLI: %v", command.Users)
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
+	providerName := DetectProvider(command.ProviderFlag)
 	verboseLog("provider: %s", providerName)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
 	}
+
+	stackFolder := resolveStackFolder(command)
+	dirName := providerDirName(providerName)
 
 	cloudInitSource := resolveCloudInitPath(command)
 	cloudInitPath := ""
@@ -353,9 +375,15 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		return err
 	}
 
-	verboseLog("saving config to %s", configPath)
-	if err := config.Save(configPath, configuration); err != nil {
-		return fmt.Errorf("VM created but failed to save config: %w", err)
+	verboseLog("saving state to %s/%s/%s/config.json", stackFolder, command.VMName, dirName)
+	if err := config.SaveState(stackFolder, command.VMName, dirName, configuration); err != nil {
+		return fmt.Errorf("VM created but failed to save state: %w", err)
+	}
+
+	if cloudInitPath != "" {
+		if err := config.CopyCloudInitToState(stackFolder, command.VMName, dirName, cloudInitPath); err != nil {
+			verboseLog("warning: failed to copy cloud-init to state: %v", err)
+		}
 	}
 
 	hostsAdded := false
@@ -368,8 +396,8 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		} else {
 			hostsAdded = true
 			configuration.Local.HostsEntry = true
-			if saveErr := config.Save(configPath, configuration); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: hosts entry added but failed to save config: %v\n", saveErr)
+			if saveErr := config.SaveState(stackFolder, command.VMName, dirName, configuration); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: hosts entry added but failed to save state: %v\n", saveErr)
 			}
 		}
 	}
@@ -393,12 +421,25 @@ func cmdCreate(ctx context.Context, command *Command) error {
 }
 
 func cmdDestroy(ctx context.Context, command *Command) error {
-	configuration, configPath, err := loadConfig(command)
-	if err != nil {
-		return err
+	providerName := DetectProvider(command.ProviderFlag)
+	dirName := providerDirName(providerName)
+	stackFolder := resolveStackFolder(command)
+
+	var configuration *config.Config
+	if config.HasState(stackFolder, command.VMName, dirName) {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, dirName)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
@@ -415,8 +456,8 @@ func cmdDestroy(ctx context.Context, command *Command) error {
 		}
 	}
 
-	if err := config.Save(configPath, configuration); err != nil {
-		return fmt.Errorf("VM destroyed but failed to save config: %w", err)
+	if err := config.ClearState(stackFolder, command.VMName, dirName); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove state directory: %v\n", err)
 	}
 
 	fmt.Printf("Destroyed %s\n", configuration.VM.Name)
@@ -457,12 +498,25 @@ func cmdList(ctx context.Context, command *Command) error {
 }
 
 func cmdSSH(ctx context.Context, command *Command) error {
-	configuration, _, err := loadConfig(command)
-	if err != nil {
-		return err
+	stackFolder := resolveStackFolder(command)
+	providerName := DetectProviderForState(command.ProviderFlag, stackFolder, command.VMName)
+	dirName := providerDirName(providerName)
+
+	var configuration *config.Config
+	if config.HasState(stackFolder, command.VMName, dirName) {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, dirName)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
@@ -472,12 +526,25 @@ func cmdSSH(ctx context.Context, command *Command) error {
 }
 
 func cmdStatus(ctx context.Context, command *Command) error {
-	configuration, _, err := loadConfig(command)
-	if err != nil {
-		return err
+	stackFolder := resolveStackFolder(command)
+	providerName := DetectProviderForState(command.ProviderFlag, stackFolder, command.VMName)
+	dirName := providerDirName(providerName)
+
+	var configuration *config.Config
+	if config.HasState(stackFolder, command.VMName, dirName) {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, dirName)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
@@ -499,12 +566,25 @@ func cmdStatus(ctx context.Context, command *Command) error {
 }
 
 func cmdStop(ctx context.Context, command *Command) error {
-	configuration, _, err := loadConfig(command)
-	if err != nil {
-		return err
+	stackFolder := resolveStackFolder(command)
+	providerName := DetectProviderForState(command.ProviderFlag, stackFolder, command.VMName)
+	dirName := providerDirName(providerName)
+
+	var configuration *config.Config
+	if config.HasState(stackFolder, command.VMName, dirName) {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, dirName)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
@@ -519,12 +599,26 @@ func cmdStop(ctx context.Context, command *Command) error {
 }
 
 func cmdStart(ctx context.Context, command *Command) error {
-	configuration, configPath, err := loadConfig(command)
-	if err != nil {
-		return err
+	stackFolder := resolveStackFolder(command)
+	providerName := DetectProviderForState(command.ProviderFlag, stackFolder, command.VMName)
+	dirName := providerDirName(providerName)
+
+	var configuration *config.Config
+	hasState := config.HasState(stackFolder, command.VMName, dirName)
+	if hasState {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, dirName)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
-	providerName := DetectProvider(command.ProviderFlag, configuration)
 	vmProvider, err := getProvider(providerName, configuration.VM.Region, command.Verbose)
 	if err != nil {
 		return err
@@ -550,8 +644,10 @@ func cmdStart(ctx context.Context, command *Command) error {
 			} else if configuration.Local != nil {
 				configuration.Local.IP = status.IP
 			}
-			if saveErr := config.Save(configPath, configuration); saveErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
+			if hasState {
+				if saveErr := config.SaveState(stackFolder, command.VMName, dirName, configuration); saveErr != nil {
+					fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
+				}
 			}
 			fmt.Printf("IP: %s\n", status.IP)
 
@@ -568,9 +664,21 @@ func cmdStart(ctx context.Context, command *Command) error {
 }
 
 func cmdDNSSwap(ctx context.Context, command *Command) error {
-	configuration, configPath, err := loadConfig(command)
-	if err != nil {
-		return err
+	stackFolder := resolveStackFolder(command)
+
+	var configuration *config.Config
+	if config.HasState(stackFolder, command.VMName, "aws") {
+		cfg, _, err := config.LoadState(stackFolder, command.VMName, "aws")
+		if err != nil {
+			return err
+		}
+		configuration = cfg
+	} else {
+		cfg, _, err := loadConfig(command)
+		if err != nil {
+			return err
+		}
+		configuration = cfg
 	}
 
 	awsProvider, err := awsprovider.NewWithSDK(configuration.VM.Region)
@@ -581,8 +689,8 @@ func cmdDNSSwap(ctx context.Context, command *Command) error {
 		return err
 	}
 
-	if err := config.Save(configPath, configuration); err != nil {
-		return fmt.Errorf("DNS swapped but failed to save config: %w", err)
+	if err := config.SaveState(stackFolder, command.VMName, "aws", configuration); err != nil {
+		return fmt.Errorf("DNS swapped but failed to save state: %w", err)
 	}
 
 	fmt.Printf("DNS swapped: %s -> %s\n", configuration.AWS.FQDN, configuration.AWS.PublicIP)
@@ -636,9 +744,8 @@ func printUsage() {
 	fmt.Println("  -d -n <name>        Destroy AWS VM")
 	fmt.Println()
 	fmt.Println("Provider Auto-Detection:")
-	fmt.Println("  If no --aws or --local flag is given, the provider is detected from:")
-	fmt.Println("  1. Existing 'aws' state section in config -> AWS")
-	fmt.Println("  2. Default -> Multipass (local)")
+	fmt.Println("  create/destroy: defaults to local unless --aws is given")
+	fmt.Println("  Other commands: checks which provider state exists, defaults to local")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  goloo create devbox                         Create local VM (stacks/devbox/)")
@@ -648,7 +755,8 @@ func printUsage() {
 	fmt.Println("  goloo create devbox -u \"alice,bob\"           Fetch SSH keys for multiple users")
 	fmt.Println("  goloo list                                  List local VMs and IPs")
 	fmt.Println("  goloo list --aws                            List AWS VMs")
-	fmt.Println("  goloo destroy devbox                        Destroy VM (auto-detects provider)")
+	fmt.Println("  goloo destroy devbox                        Destroy local VM")
+	fmt.Println("  goloo destroy devbox --aws                  Destroy AWS VM")
 	fmt.Println("  goloo ssh devbox                            SSH into VM")
 	fmt.Println("  goloo dns swap devbox                       Update DNS to current IP")
 }
