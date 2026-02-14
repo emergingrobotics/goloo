@@ -9,6 +9,7 @@ import (
 
 	"github.com/emergingrobotics/goloo/internal/cloudinit"
 	"github.com/emergingrobotics/goloo/internal/config"
+	"github.com/emergingrobotics/goloo/internal/hosts"
 	"github.com/emergingrobotics/goloo/internal/provider"
 	awsprovider "github.com/emergingrobotics/goloo/internal/provider/aws"
 	"github.com/emergingrobotics/goloo/internal/provider/multipass"
@@ -30,6 +31,7 @@ type Command struct {
 	FolderPath   string
 	Users        []string
 	Verbose      bool
+	NoHosts      bool
 }
 
 var verboseEnabled bool
@@ -215,6 +217,8 @@ func parseNameAndFlags(command *Command, remaining []string) (*Command, error) {
 					command.Users = append(command.Users, trimmed)
 				}
 			}
+		case arg == "--no-hosts":
+			command.NoHosts = true
 		case strings.HasPrefix(arg, "-"):
 			return nil, fmt.Errorf("unknown flag %q\nRun 'goloo help' for usage", arg)
 		default:
@@ -354,6 +358,22 @@ func cmdCreate(ctx context.Context, command *Command) error {
 		return fmt.Errorf("VM created but failed to save config: %w", err)
 	}
 
+	hostsAdded := false
+	if providerName == "multipass" && !command.NoHosts && configuration.Local != nil && configuration.Local.IP != "" {
+		hostnames := hosts.BuildHostnames(configuration.VM.Name, dnsHostname(configuration), dnsDomain(configuration))
+		fmt.Println("Adding hostname to /etc/hosts (requires sudo)")
+		if err := hosts.Add(configuration.VM.Name, configuration.Local.IP, hostnames, command.Verbose); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to update /etc/hosts: %v\n", err)
+			fmt.Fprintln(os.Stderr, hosts.ManualInstructions(configuration.Local.IP, hostnames, configuration.VM.Name))
+		} else {
+			hostsAdded = true
+			configuration.Local.HostsEntry = true
+			if saveErr := config.Save(configPath, configuration); saveErr != nil {
+				fmt.Fprintf(os.Stderr, "Warning: hosts entry added but failed to save config: %v\n", saveErr)
+			}
+		}
+	}
+
 	fmt.Printf("Created %s via %s\n", configuration.VM.Name, vmProvider.Name())
 	if configuration.AWS != nil && configuration.AWS.PublicIP != "" {
 		fmt.Printf("IP: %s\n", configuration.AWS.PublicIP)
@@ -362,6 +382,10 @@ func cmdCreate(ctx context.Context, command *Command) error {
 	}
 	if configuration.AWS != nil && configuration.AWS.FQDN != "" {
 		fmt.Printf("DNS: %s\n", configuration.AWS.FQDN)
+	}
+	if hostsAdded {
+		hostnames := hosts.BuildHostnames(configuration.VM.Name, dnsHostname(configuration), dnsDomain(configuration))
+		fmt.Printf("Hosts: %s\n", strings.Join(hostnames, ", "))
 	}
 	fmt.Printf("SSH: goloo ssh %s\n", configuration.VM.Name)
 
@@ -382,6 +406,13 @@ func cmdDestroy(ctx context.Context, command *Command) error {
 
 	if err := vmProvider.Delete(ctx, configuration); err != nil {
 		return err
+	}
+
+	if providerName == "multipass" && !command.NoHosts && hosts.HasEntry(configuration.VM.Name) {
+		fmt.Println("Removing hostname from /etc/hosts (requires sudo)")
+		if err := hosts.Remove(configuration.VM.Name, command.Verbose); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove /etc/hosts entry: %v\n", err)
+		}
 	}
 
 	if err := config.Save(configPath, configuration); err != nil {
@@ -523,6 +554,13 @@ func cmdStart(ctx context.Context, command *Command) error {
 				fmt.Fprintf(os.Stderr, "Warning: started but failed to save updated IP: %v\n", saveErr)
 			}
 			fmt.Printf("IP: %s\n", status.IP)
+
+			if providerName == "multipass" && !command.NoHosts && configuration.Local != nil && configuration.Local.HostsEntry {
+				hostnames := hosts.BuildHostnames(configuration.VM.Name, dnsHostname(configuration), dnsDomain(configuration))
+				if err := hosts.Add(configuration.VM.Name, status.IP, hostnames, command.Verbose); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: failed to update /etc/hosts with new IP: %v\n", err)
+				}
+			}
 		}
 	}
 
@@ -551,6 +589,20 @@ func cmdDNSSwap(ctx context.Context, command *Command) error {
 	return nil
 }
 
+func dnsHostname(configuration *config.Config) string {
+	if configuration.DNS != nil {
+		return configuration.DNS.Hostname
+	}
+	return ""
+}
+
+func dnsDomain(configuration *config.Config) string {
+	if configuration.DNS != nil {
+		return configuration.DNS.Domain
+	}
+	return ""
+}
+
 func printUsage() {
 	fmt.Println("goloo - Unified VM Provisioning")
 	fmt.Println()
@@ -571,6 +623,7 @@ func printUsage() {
 	fmt.Println("  --local             Use local Multipass provider")
 	fmt.Println("  --folder, -f PATH   Base folder for configs (default: stacks/)")
 	fmt.Println("  --users, -u USERS   GitHub usernames for SSH keys (comma-separated)")
+	fmt.Println("  --no-hosts          Skip /etc/hosts management for local VMs")
 	fmt.Println("  --verbose, -v       Show detailed progress")
 	fmt.Println("  --version           Show version")
 	fmt.Println("  --help, -h          Show this help")

@@ -532,6 +532,42 @@ func TestParseArgsUsersFlagWithOtherFlags(t *testing.T) {
 	}
 }
 
+func TestParseArgsNoHostsFlag(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "--no-hosts"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !command.NoHosts {
+		t.Error("expected NoHosts=true for --no-hosts flag")
+	}
+	if command.VMName != "devbox" {
+		t.Errorf("expected VMName 'devbox', got %q", command.VMName)
+	}
+}
+
+func TestParseArgsNoHostsFlagWithOtherFlags(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox", "--no-hosts", "--local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !command.NoHosts {
+		t.Error("expected NoHosts=true")
+	}
+	if command.ProviderFlag != "local" {
+		t.Errorf("expected ProviderFlag 'local', got %q", command.ProviderFlag)
+	}
+}
+
+func TestParseArgsNoHostsDefaultFalse(t *testing.T) {
+	command, err := ParseArgs([]string{"create", "devbox"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.NoHosts {
+		t.Error("expected NoHosts=false by default")
+	}
+}
+
 func TestDetectProviderAWSFlag(t *testing.T) {
 	configuration := &config.Config{VM: &config.VMConfig{}}
 	result := DetectProvider("aws", configuration)

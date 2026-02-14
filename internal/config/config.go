@@ -40,7 +40,8 @@ type DNSConfig struct {
 }
 
 type LocalState struct {
-	IP string `json:"ip,omitempty"`
+	IP         string `json:"ip,omitempty"`
+	HostsEntry bool   `json:"hosts_entry,omitempty"`
 }
 
 type AWSState struct {
